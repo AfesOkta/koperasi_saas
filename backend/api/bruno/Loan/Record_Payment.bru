@@ -1,0 +1,22 @@
+meta {
+  name: Record Payment
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/loans/1/payments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "amount": 500000,
+    "payment_method": "CASH"
+  }
+}

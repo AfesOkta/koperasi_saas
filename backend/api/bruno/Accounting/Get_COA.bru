@@ -1,0 +1,15 @@
+meta {
+  name: Get COA
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/accounting/coa
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

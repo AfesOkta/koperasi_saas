@@ -1,0 +1,9 @@
+{
+    "name": "Koperasi Multi Usaha SaaS",
+    "version": "1",
+    "type": "collection",
+    "ignore": [
+        "node_modules",
+        ".git"
+    ]
+}

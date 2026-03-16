@@ -1,0 +1,20 @@
+meta {
+  name: Upload Document
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/members/1/documents
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:multipart-form {
+  type: KTP
+  document: @file()
+}

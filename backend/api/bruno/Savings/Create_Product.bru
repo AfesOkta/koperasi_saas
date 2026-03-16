@@ -1,0 +1,23 @@
+meta {
+  name: Create Product
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/savings/products
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Simpanan Sukarela",
+    "minimum_balance": 10000,
+    "interest_rate": 0.05
+  }
+}

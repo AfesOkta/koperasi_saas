@@ -1,0 +1,23 @@
+meta {
+  name: Update Settings
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/organizations/1/settings
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "settings": {
+      "enabled_modules": ["savings", "loans", "iam", "member"]
+    }
+  }
+}

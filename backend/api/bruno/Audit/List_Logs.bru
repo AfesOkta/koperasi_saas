@@ -1,0 +1,15 @@
+meta {
+  name: List Logs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/audit/logs?limit=20&offset=0
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

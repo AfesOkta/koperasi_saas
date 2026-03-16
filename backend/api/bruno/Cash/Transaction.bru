@@ -1,0 +1,25 @@
+meta {
+  name: Record Transaction
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/cash/transactions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "register_id": 1,
+    "type": "in",
+    "amount": 50000,
+    "category": "other",
+    "notes": "Miscellaneous income"
+  }
+}

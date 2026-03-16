@@ -1,0 +1,15 @@
+meta {
+  name: Get Subscription
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/billing/subscription
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

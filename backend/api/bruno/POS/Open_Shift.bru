@@ -1,0 +1,21 @@
+meta {
+  name: Open Shift
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/pos/shifts/open
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "start_balance": 500000
+  }
+}

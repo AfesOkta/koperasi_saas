@@ -1,0 +1,32 @@
+meta {
+  name: Create Sales Order
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/sales/orders
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "items": [
+      {
+        "product_id": 1,
+        "quantity": 2
+      }
+    ],
+    "payments": [
+      {
+        "method": "cash",
+        "amount": 150000
+      }
+    ]
+  }
+}

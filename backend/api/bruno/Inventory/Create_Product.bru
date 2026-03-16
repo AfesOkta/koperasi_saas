@@ -1,0 +1,25 @@
+meta {
+  name: Create Product
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/inventory/products
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Beras 5kg",
+    "sku": "BRS-001",
+    "category_id": 1,
+    "price": 65000,
+    "stock": 100
+  }
+}

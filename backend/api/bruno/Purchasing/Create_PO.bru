@@ -1,0 +1,28 @@
+meta {
+  name: Create Purchase Order
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/purchasing/orders
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "supplier_id": 1,
+    "items": [
+      {
+        "product_id": 1,
+        "quantity": 20,
+        "cost_price": 68000
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+meta {
+  name: Public Onboarding
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/organizations/onboard
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "organization_name": "Koperasi Mandiri Sejahtera",
+    "email": "kontak@mandirisejahtera.com",
+    "phone": "081299887766",
+    "address": "Pasuruan, Jawa Timur",
+    "admin_name": "Admin Mandiri",
+    "admin_email": "admin@mandirisejahtera.com",
+    "admin_password": "password123"
+  }
+}

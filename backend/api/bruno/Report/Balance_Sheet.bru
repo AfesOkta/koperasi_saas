@@ -1,0 +1,15 @@
+meta {
+  name: Balance Sheet
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/reports/balance-sheet
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

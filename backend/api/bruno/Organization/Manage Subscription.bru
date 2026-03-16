@@ -1,0 +1,29 @@
+meta {
+  name: Manage Subscription
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/organizations/:id/settings
+  body: json
+  auth: inherit
+}
+
+params:path {
+  id: 2
+}
+
+body:json {
+  {
+    "plan": "premium",
+    "settings": {
+      "enabled_modules": ["iam", "organization", "member", "savings", "loans", "accounting", "inventory"]
+    }
+  }
+}
+
+docs {
+  Requires SuperAdmin Token (User from Org ID 1).
+  Allows changing the organization's plan and enabling/disabling modules.
+}

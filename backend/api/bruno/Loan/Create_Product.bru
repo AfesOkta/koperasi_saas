@@ -1,0 +1,27 @@
+meta {
+  name: Create Loan Product
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/loans/products
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Kredit Usaha",
+    "interest_rate": 1.5,
+    "interest_type": "flat",
+    "min_amount": 1000000,
+    "max_amount": 50000000,
+    "min_tenure": 6,
+    "max_tenure": 36
+  }
+}

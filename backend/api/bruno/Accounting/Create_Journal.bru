@@ -1,0 +1,33 @@
+meta {
+  name: Create Journal Entry
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/accounting/journal-entries
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "description": "Adjusting entry",
+    "lines": [
+      {
+        "account_id": 1,
+        "type": "debit",
+        "amount": 1000
+      },
+      {
+        "account_id": 2,
+        "type": "credit",
+        "amount": 1000
+      }
+    ]
+  }
+}

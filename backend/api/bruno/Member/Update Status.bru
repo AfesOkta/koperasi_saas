@@ -1,0 +1,21 @@
+meta {
+  name: Update Status
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/members/1/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "active"
+  }
+}

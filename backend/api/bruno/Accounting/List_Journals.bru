@@ -1,0 +1,15 @@
+meta {
+  name: List Journals
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/accounting/journals
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

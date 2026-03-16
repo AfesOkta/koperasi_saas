@@ -1,0 +1,23 @@
+meta {
+  name: Withdraw
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/savings/withdraw
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "member_id": 1,
+    "product_id": 1,
+    "amount": 50000
+  }
+}

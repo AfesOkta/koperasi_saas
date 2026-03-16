@@ -1,0 +1,28 @@
+meta {
+  name: Create Member
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/members
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Member Satu",
+    "email": "memberone@gmail.com",
+    "phone": "08123456789",
+    "address": "Gresik, Jawa Timur",
+    "nik": "1234567890123456",
+    "member_type": "regular",
+    "create_user": true
+  }
+}
+
