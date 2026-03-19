@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/koperasi-gresik/backend/internal/modules/loan/dto"
 	"github.com/koperasi-gresik/backend/internal/modules/loan/model"
 	"github.com/koperasi-gresik/backend/internal/modules/loan/repository"
+	"github.com/koperasi-gresik/backend/internal/shared/event"
 	"github.com/koperasi-gresik/backend/internal/shared/utils"
 )
 
@@ -23,11 +26,12 @@ type LoanService interface {
 }
 
 type loanService struct {
-	repo repository.LoanRepository
+	repo      repository.LoanRepository
+	publisher event.Publisher
 }
 
-func NewLoanService(repo repository.LoanRepository) LoanService {
-	return &loanService{repo: repo}
+func NewLoanService(repo repository.LoanRepository, publisher event.Publisher) LoanService {
+	return &loanService{repo: repo, publisher: publisher}
 }
 
 func (s *loanService) CreateProduct(ctx context.Context, orgID uint, req dto.LoanProductCreateRequest) (*dto.LoanProductResponse, error) {
@@ -86,29 +90,75 @@ func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.Loan
 	}
 	loan.OrganizationID = orgID
 
-	// Generate expected schedules based on flat interest logic for MVP
+	// Generate schedules (Flat vs Reducing Balance)
 	var schedules []model.LoanSchedule
-	totalInterest := (req.PrincipalAmount * (product.InterestRate / 100)) * float64(req.TermMonths)
-	loan.TotalInterest = totalInterest
-	loan.ExpectedTotal = req.PrincipalAmount + totalInterest
-	loan.Outstanding = loan.ExpectedTotal
+	var totalInterest, expectedTotal float64
 
-	principalPerMonth := req.PrincipalAmount / float64(req.TermMonths)
-	interestPerMonth := totalInterest / float64(req.TermMonths)
-
-	now := time.Now()
-	for i := 1; i <= req.TermMonths; i++ {
-		dueDate := now.AddDate(0, i, 0).Format("2006-01-02")
-		schedule := model.LoanSchedule{
-			Period:          i,
-			DueDate:         dueDate,
-			PrincipalAmount: principalPerMonth,
-			InterestAmount:  interestPerMonth,
-			TotalAmount:     principalPerMonth + interestPerMonth,
-			Status:          "unpaid",
+	if product.InterestType == "reducing" || product.InterestType == "effective" {
+		r := (product.InterestRate / 100) / 12
+		n := float64(req.TermMonths)
+		pmt := (req.PrincipalAmount * r * math.Pow(1+r, n)) / (math.Pow(1+r, n) - 1)
+		if math.IsNaN(pmt) || math.IsInf(pmt, 0) {
+			pmt = req.PrincipalAmount / n // Fallback to 0 interest
 		}
-		schedule.OrganizationID = orgID
-		schedules = append(schedules, schedule)
+
+		expectedTotal = pmt * n
+		totalInterest = expectedTotal - req.PrincipalAmount
+		
+		loan.TotalInterest = totalInterest
+		loan.ExpectedTotal = expectedTotal
+		loan.Outstanding = expectedTotal
+		
+		balance := req.PrincipalAmount
+		now := time.Now()
+		for i := 1; i <= req.TermMonths; i++ {
+			interestForMonth := balance * r
+			principalForMonth := pmt - interestForMonth
+			
+			// Adjust last month rounding
+			if i == req.TermMonths {
+				principalForMonth = balance
+				pmt = principalForMonth + interestForMonth
+			}
+
+			dueDate := now.AddDate(0, i, 0).Format("2006-01-02")
+			schedule := model.LoanSchedule{
+				Period:          i,
+				DueDate:         dueDate,
+				PrincipalAmount: principalForMonth,
+				InterestAmount:  interestForMonth,
+				TotalAmount:     pmt,
+				Status:          "unpaid",
+			}
+			schedule.OrganizationID = orgID
+			schedules = append(schedules, schedule)
+			
+			balance -= principalForMonth
+		}
+	} else {
+		// Flat interest logic
+		totalInterest = (req.PrincipalAmount * (product.InterestRate / 100)) * float64(req.TermMonths)
+		loan.TotalInterest = totalInterest
+		loan.ExpectedTotal = req.PrincipalAmount + totalInterest
+		loan.Outstanding = loan.ExpectedTotal
+
+		principalPerMonth := req.PrincipalAmount / float64(req.TermMonths)
+		interestPerMonth := totalInterest / float64(req.TermMonths)
+
+		now := time.Now()
+		for i := 1; i <= req.TermMonths; i++ {
+			dueDate := now.AddDate(0, i, 0).Format("2006-01-02")
+			schedule := model.LoanSchedule{
+				Period:          i,
+				DueDate:         dueDate,
+				PrincipalAmount: principalPerMonth,
+				InterestAmount:  interestPerMonth,
+				TotalAmount:     principalPerMonth + interestPerMonth,
+				Status:          "unpaid",
+			}
+			schedule.OrganizationID = orgID
+			schedules = append(schedules, schedule)
+		}
 	}
 
 	loan.Schedules = schedules
@@ -135,7 +185,26 @@ func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID uint) error
 	loan.ApprovedAt = &now
 	loan.DisbursedAt = &now // For MVP, assume immediate disbursement
 
-	return s.repo.UpdateLoanStatus(ctx, loan)
+	if err := s.repo.UpdateLoanStatus(ctx, loan); err != nil {
+		return err
+	}
+
+	payload := event.LoanTransactionPayload{
+		MemberID:      loan.MemberID,
+		Amount:        loan.PrincipalAmount,
+		Description:   fmt.Sprintf("Disbursement for Loan %s", loan.LoanNumber),
+	}
+	evt := event.Event{
+		Type:           event.EventLoanDisbursed,
+		AggregateID:    loan.ID,
+		OrganizationID: orgID,
+		Payload:        payload,
+	}
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, evt)
+	}
+
+	return nil
 }
 
 func (s *loanService) RecordPayment(ctx context.Context, orgID, loanID uint, req dto.LoanPaymentRequest) (*dto.LoanPaymentResponse, error) {
@@ -191,6 +260,28 @@ func (s *loanService) RecordPayment(ctx context.Context, orgID, loanID uint, req
 
 	if err := s.repo.RecordPayment(ctx, loan, payment, schedulesToUpdate); err != nil {
 		return nil, err
+	}
+
+	// Prorate principal and interest for the payment
+	principalRatio := loan.PrincipalAmount / loan.ExpectedTotal
+	principalPart := req.Amount * principalRatio
+	interestPart := req.Amount - principalPart
+
+	payload := event.LoanTransactionPayload{
+		MemberID:      loan.MemberID,
+		Amount:        req.Amount,
+		PrincipalPart: principalPart,
+		InterestPart:  interestPart,
+		Description:   req.Description,
+	}
+	evt := event.Event{
+		Type:           event.EventLoanInstallmentPaid,
+		AggregateID:    loan.ID,
+		OrganizationID: orgID,
+		Payload:        payload,
+	}
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, evt)
 	}
 
 	return s.mapPaymentToResponse(payment), nil

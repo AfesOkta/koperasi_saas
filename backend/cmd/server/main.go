@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/koperasi-gresik/backend/config"
 	"github.com/koperasi-gresik/backend/internal/shared/database"
+	"github.com/koperasi-gresik/backend/internal/shared/event"
 	"github.com/koperasi-gresik/backend/internal/shared/middleware"
 
 	iamHandler "github.com/koperasi-gresik/backend/internal/modules/iam/handler"
@@ -76,6 +78,7 @@ import (
 
 	shuHandler "github.com/koperasi-gresik/backend/internal/modules/shu/handler"
 	shuRepo "github.com/koperasi-gresik/backend/internal/modules/shu/repository"
+	shuService "github.com/koperasi-gresik/backend/internal/modules/shu/service"
 )
 
 func main() {
@@ -142,19 +145,28 @@ func main() {
 	posRepository := posRepo.NewPOSRepository(db)
 	shuRepository := shuRepo.NewSHURepository(db)
 
+	// Event Bus (In-Memory for MVP)
+	eventBus := event.NewMemoryEventBus()
+	defer eventBus.Close()
+
 	// Services
 	authenticationService := iamService.NewAuthService(userRepository, roleRepository, cfg.JWT.Secret, cfg.JWT.ExpirationHours)
 	organizationService := orgService.NewOrganizationService(orgRepository, userRepository, roleRepository, db)
 	membershipService := memberService.NewMemberService(memberRepository, authenticationService)
-	savingModuleService := savingService.NewSavingService(savingRepository)
+	savingModuleService := savingService.NewSavingService(savingRepository, eventBus)
 	accountingModuleService := accountingService.NewAccountingService(accountingRepository)
 	cashModuleService := cashService.NewCashService(cashRepository)
-	loanModuleService := loanService.NewLoanService(loanRepository)
+	loanModuleService := loanService.NewLoanService(loanRepository, eventBus)
 	inventoryModuleService := inventoryService.NewInventoryService(inventoryRepository)
 	supplierModuleService := supplierService.NewSupplierService(supplierRepository)
 	salesModuleService := salesService.NewSalesService(salesRepository, inventoryModuleService)
 	purchasingModuleService := purchasingService.NewPurchasingService(purchasingRepository, inventoryModuleService)
 	reportModuleService := reportService.NewReportService(db)
+	shuModuleService := shuService.NewSHUService(shuRepository)
+
+	// Start Accounting Event Handler
+	accountingEventHandler := accountingService.NewAccountingEventHandler(accountingModuleService, eventBus)
+	go accountingEventHandler.Start(context.Background())
 
 	// Handlers
 	authenticationHandler := iamHandler.NewAuthHandler(authenticationService)
@@ -173,7 +185,7 @@ func main() {
 	billingModuleHandler := billingHandler.NewBillingHandler(billingRepository)
 	notificationModuleHandler := notificationHandler.NewNotificationHandler(notificationRepository)
 	posModuleHandler := posHandler.NewPOSHandler(posRepository)
-	shuModuleHandler := shuHandler.NewSHUHandler(shuRepository)
+	shuModuleHandler := shuHandler.NewSHUHandler(shuModuleService)
 
 	// Register Routes
 	iamHandler.RegisterPublicRoutes(v1, authenticationHandler)

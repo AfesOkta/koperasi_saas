@@ -1,6 +1,10 @@
 package model
 
-import "github.com/koperasi-gresik/backend/internal/modules/iam/model"
+import (
+	"time"
+
+	"github.com/koperasi-gresik/backend/internal/modules/iam/model"
+)
 
 // Account represents a Chart of Accounts (CoA) entry.
 type Account struct {
@@ -18,9 +22,16 @@ type Account struct {
 type JournalEntry struct {
 	model.TenantModel
 	ReferenceNumber string             `json:"reference_number" gorm:"not null;uniqueIndex"`
-	Date            string             `json:"date" gorm:"type:date;not null"`
+	IdempotencyKey  string             `json:"idempotency_key" gorm:"index;uniqueIndex:idx_idempotency_org"` // For duplicate prevention
+	Date            time.Time          `json:"date" gorm:"type:date;not null"`
 	Description     string             `json:"description"`
 	Status          string             `json:"status" gorm:"default:'posted'"` // drafted, posted, voided
+	SourceModule    string             `json:"source_module"`                  // savings, loan, cash, sales, purchasing
+	SourceReference string             `json:"source_reference"`               // Original transaction ID
+	ReversedEntryID *uint              `json:"reversed_entry_id" gorm:"index"` // Links to reversed entry
+	ReversalReason  string             `json:"reversal_reason"`                // Reason for reversal
+	PostedAt        *time.Time         `json:"posted_at"`                      // When entry was posted
+	PostedBy        *uint              `json:"posted_by" gorm:"index"`
 	Lines           []JournalEntryLine `json:"lines" gorm:"foreignKey:JournalEntryID"`
 }
 
@@ -29,7 +40,10 @@ type JournalEntryLine struct {
 	model.TenantModel
 	JournalEntryID uint    `json:"journal_entry_id" gorm:"not null;index"`
 	AccountID      uint    `json:"account_id" gorm:"not null;index"`
+	AccountCode    string  `json:"account_code"` // Denormalized for audit
 	Description    string  `json:"description"`
 	Debit          float64 `json:"debit" gorm:"type:decimal(15,2);default:0"`
 	Credit         float64 `json:"credit" gorm:"type:decimal(15,2);default:0"`
+	PartnerID      *uint   `json:"partner_id" gorm:"index"` // Member, supplier, etc.
+	PartnerType    string  `json:"partner_type"`            // member, supplier, employee
 }

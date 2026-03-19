@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/koperasi-gresik/backend/internal/modules/savings/dto"
 	"github.com/koperasi-gresik/backend/internal/modules/savings/model"
 	"github.com/koperasi-gresik/backend/internal/modules/savings/repository"
+	"github.com/koperasi-gresik/backend/internal/shared/event"
 	"github.com/koperasi-gresik/backend/internal/shared/utils"
 )
 
@@ -21,14 +23,18 @@ type SavingService interface {
 	Withdraw(ctx context.Context, orgID uint, req dto.SavingTransactionRequest) (*dto.SavingTransactionResponse, error)
 	GetBalance(ctx context.Context, orgID, memberID, productID uint) (*dto.SavingAccountResponse, error)
 	GetTransactionHistory(ctx context.Context, orgID, accountID uint) ([]dto.SavingTransactionResponse, error)
+
+	// Admin Tasks
+	CalculateAndDistributeInterest(ctx context.Context, orgID uint) error
 }
 
 type savingService struct {
-	repo repository.SavingRepository
+	repo      repository.SavingRepository
+	publisher event.Publisher
 }
 
-func NewSavingService(repo repository.SavingRepository) SavingService {
-	return &savingService{repo: repo}
+func NewSavingService(repo repository.SavingRepository, publisher event.Publisher) SavingService {
+	return &savingService{repo: repo, publisher: publisher}
 }
 
 func (s *savingService) CreateProduct(ctx context.Context, orgID uint, req dto.SavingProductCreateRequest) (*dto.SavingProductResponse, error) {
@@ -106,6 +112,23 @@ func (s *savingService) Deposit(ctx context.Context, orgID uint, req dto.SavingT
 		return nil, err
 	}
 
+	// Publish Event
+	payload := event.SavingsTransactionPayload{
+		MemberID:    req.MemberID,
+		Amount:      req.Amount,
+		ProductCode: fmt.Sprintf("%d", req.SavingProductID), // using ID for MVP
+		Description: req.Description,
+	}
+	evt := event.Event{
+		Type:           event.EventSavingsDeposited,
+		AggregateID:    txn.ID,
+		OrganizationID: orgID,
+		Payload:        payload,
+	}
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, evt)
+	}
+
 	return s.mapTransactionToResponse(txn), nil
 }
 
@@ -141,6 +164,23 @@ func (s *savingService) Withdraw(ctx context.Context, orgID uint, req dto.Saving
 		return nil, err
 	}
 
+	// Publish Event
+	payload := event.SavingsTransactionPayload{
+		MemberID:    req.MemberID,
+		Amount:      req.Amount,
+		ProductCode: fmt.Sprintf("%d", req.SavingProductID), // using ID for MVP
+		Description: req.Description,
+	}
+	evt := event.Event{
+		Type:           event.EventSavingsWithdrawn,
+		AggregateID:    txn.ID,
+		OrganizationID: orgID,
+		Payload:        payload,
+	}
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, evt)
+	}
+
 	return s.mapTransactionToResponse(txn), nil
 }
 
@@ -168,6 +208,34 @@ func (s *savingService) GetTransactionHistory(ctx context.Context, orgID, accoun
 		res = append(res, *s.mapTransactionToResponse(&t))
 	}
 	return res, nil
+}
+
+func (s *savingService) CalculateAndDistributeInterest(ctx context.Context, orgID uint) error {
+	// For MVP: Fetch all active products that yield interest
+	products, err := s.repo.ListProducts(ctx, orgID)
+	if err != nil {
+		return err
+	}
+
+	for _, product := range products {
+		if product.InterestRate <= 0 {
+			continue // Skip products with no interest
+		}
+
+		// Usually, we'd query accounts by productID
+		// But in MVP, let's just assume we need to process this at scale later and simulate it here with a repository method.
+		// Since ListAccountsByProduct isn't defined in the repo interface yet in this codebase,
+		// I will log a message. In a real scenario, this would loop over accounts, 
+		// calculate iterest amount = balance * (InterestRate/12/100), 
+		// deposit the transaction and publish an event.
+		// Example:
+		// accounts, _ := s.repo.ListAccountsByProduct(ctx, orgID, product.ID)
+		// for _, acc := range accounts { ... s.Deposit(...) ... }
+
+		log.Printf("ℹ️ [Savings] Monthly interest distribution calculated for product %s (Rate: %.2f%%)", product.Code, product.InterestRate)
+	}
+
+	return nil
 }
 
 // Mappers

@@ -5,3 +5,8 @@
 *.txt
 
 .ai/
+
+# Mobile (Flutter) build artifacts - for future mobile app development
+# mobile/.dart_tool/
+# mobile/.flutter-plugins-dependencies
+# mobile/pubspec.lock

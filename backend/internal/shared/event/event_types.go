@@ -1,5 +1,7 @@
 package event
 
+import "context"
+
 // Event type constants for the Kafka event bus.
 const (
 	// IAM Events
@@ -45,4 +47,33 @@ type Event struct {
 	OrganizationID uint        `json:"organization_id"`
 	Payload        interface{} `json:"payload"`
 	Timestamp      int64       `json:"timestamp"`
+}
+
+// SavingsTransactionPayload defines the payload for savings events.
+type SavingsTransactionPayload struct {
+	MemberID    uint    `json:"member_id"`
+	Amount      float64 `json:"amount"`
+	ProductCode string  `json:"product_code"`
+	Description string  `json:"description"`
+}
+
+// LoanTransactionPayload defines the payload for loan events.
+type LoanTransactionPayload struct {
+	MemberID       uint    `json:"member_id"`
+	Amount         float64 `json:"amount"`
+	PrincipalPart  float64 `json:"principal_part"`
+	InterestPart   float64 `json:"interest_part"`
+	Description    string  `json:"description"`
+}
+
+// Publisher interface for publishing domain events.
+type Publisher interface {
+	Publish(ctx context.Context, evt Event) error
+	Close() error
+}
+
+// Subscriber interface for consuming domain events.
+type Subscriber interface {
+	Consume(ctx context.Context, handler func(Event) error)
+	Close() error
 }

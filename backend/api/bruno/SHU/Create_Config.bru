@@ -1,0 +1,24 @@
+meta {
+  name: Create SHU Config
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/shu/configs
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "year": 2026,
+    "total_shu": 50000000,
+    "member_savings_pct": 40.0,
+    "member_business_pct": 60.0
+  }
+}
