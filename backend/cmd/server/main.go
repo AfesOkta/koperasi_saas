@@ -116,6 +116,14 @@ func main() {
 		log.Printf("⚠️  Failed to seed permissions: %v", err)
 	}
 
+	if err := seeds.SeedAllRoles(context.Background(), db); err != nil {
+		log.Printf("⚠️  Failed to seed roles: %v", err)
+	}
+
+	if err := seeds.SeedAllCOA(context.Background(), db); err != nil {
+		log.Printf("⚠️  Failed to seed COA: %v", err)
+	}
+
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:      cfg.App.Name,
@@ -280,7 +288,7 @@ func main() {
 	closingHandler.RegisterRoutes(v1, closingModuleHandler, authMid) // Admin manual triggers
 
 	// Period Guard Middleware setup (Optional inclusion in other routes)
-	// Example: v1.Use(middleware.PeriodGuard(closingRepository)) 
+	// Example: v1.Use(middleware.PeriodGuard(closingRepository))
 	// (applied after authMid/tenantMid to ensure we have context)
 
 	// Start server

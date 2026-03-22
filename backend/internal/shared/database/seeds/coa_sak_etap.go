@@ -68,12 +68,69 @@ func SeedCOASAKETAP(ctx context.Context, db *gorm.DB, orgID uint) error {
 	if err := db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "organization_id"}, {Name: "code"}},
-			DoUpdates: clause.AssignmentColumns([]string{"name", "type", "normal_balance", "is_active"}),
+			DoNothing: true,
 		}).
 		Create(&accounts).Error; err != nil {
 		return err
 	}
+	// setelah proses insert data coa, saya ingin update parent_id dari account yang memiliki referensi code characted 1 sampai ke-3
+	// menjadi parent_id account yang memiliki referensi code characted 1 sampai ke-2
+	// contoh: account dengan code 1100 memiliki parent_id 1000
+	// account dengan code 1110 memiliki parent_id 1100
+	// account dengan code 1111 memiliki parent_id 1110
+	// account dengan code 11111 memiliki parent_id 1111
+	// account dengan code 111111 memiliki parent_id 11111
+	// account dengan code 1111111 memiliki parent_id 111111
 
-	log.Printf("✅ Seeded %d SAK ETAP accounts for org %d", len(accounts), orgID)
+	// 1. Fetch all accounts for the current orgID to get their database IDs
+	var allAccounts []accountingModel.Account
+	if err := db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&allAccounts).Error; err != nil {
+		return err
+	}
+
+	// 2. Build map of Code to ID
+	codeToID := make(map[string]uint)
+	for _, acc := range allAccounts {
+		codeToID[acc.Code] = acc.ID
+	}
+
+	// 3. Update ParentIDs based on code structure
+	for _, acc := range allAccounts {
+		parentCode := ""
+		if len(acc.Code) > 4 {
+			parentCode = acc.Code[:len(acc.Code)-1]
+		} else if len(acc.Code) == 4 {
+			if acc.Code[3] != '0' {
+				parentCode = acc.Code[:3] + "0"
+			} else if acc.Code[2] != '0' {
+				parentCode = acc.Code[:2] + "00"
+			} else if acc.Code[1] != '0' {
+				parentCode = acc.Code[:1] + "000"
+			}
+		}
+
+		if parentCode != "" {
+			if parentID, ok := codeToID[parentCode]; ok {
+				if err := db.WithContext(ctx).Model(&acc).Update("parent_id", parentID).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	log.Printf("✅ Seeded and linked %d SAK ETAP accounts for org %d", len(accounts), orgID)
+	return nil
+}
+
+// SeedAllCOA iterates through all organizations and runs SeedCOASAKETAP for each.
+func SeedAllCOA(ctx context.Context, db *gorm.DB) error {
+	var orgIDs []uint
+	if err := db.WithContext(ctx).Table("organizations").Pluck("id", &orgIDs).Error; err != nil {
+		return err
+	}
+
+	for _, id := range orgIDs {
+		_ = SeedCOASAKETAP(ctx, db, id)
+	}
 	return nil
 }

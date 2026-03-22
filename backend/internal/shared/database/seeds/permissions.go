@@ -206,3 +206,17 @@ func SeedSystemRoles(ctx context.Context, db *gorm.DB, orgID uint) error {
 	log.Printf("✅ Seeded 5 system roles for org %d", orgID)
 	return nil
 }
+
+// SeedAllRoles iterates through all organizations and runs SeedSystemRoles for each.
+// Useful for ensuring all orgs have up-to-date role-permission mappings on startup.
+func SeedAllRoles(ctx context.Context, db *gorm.DB) error {
+	var orgIDs []uint
+	if err := db.WithContext(ctx).Table("organizations").Pluck("id", &orgIDs).Error; err != nil {
+		return err
+	}
+
+	for _, id := range orgIDs {
+		_ = SeedSystemRoles(ctx, db, id)
+	}
+	return nil
+}
