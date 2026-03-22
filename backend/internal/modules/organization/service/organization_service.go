@@ -191,6 +191,11 @@ func (s *organizationService) Onboard(ctx context.Context, req dto.OnboardingReq
 			return err
 		}
 
+		// 5. Seed SAK ETAP Chart of Accounts
+		if err := seeds.SeedCOASAKETAP(ctx, tx, org.ID); err != nil {
+			return err
+		}
+
 		// 5. Assign admin role to the admin user
 		var adminRole iamModel.Role
 		if err := tx.Where("organization_id = ? AND name = ?", org.ID, "admin").First(&adminRole).Error; err == nil {
