@@ -3,30 +3,45 @@ package service
 import (
 	"context"
 	"errors"
+	"time" // Added for time.Now().Unix()
 
 	"github.com/koperasi-gresik/backend/internal/modules/iam/dto"
 	"github.com/koperasi-gresik/backend/internal/modules/iam/model"
 	"github.com/koperasi-gresik/backend/internal/modules/iam/repository"
+	"github.com/koperasi-gresik/backend/internal/shared/event"
 	"github.com/koperasi-gresik/backend/internal/shared/utils"
 )
 
 type AuthService interface {
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error)
 	Register(ctx context.Context, req dto.UserCreateRequest) (*dto.UserResponse, error)
+	Refresh(ctx context.Context, refreshToken string) (*dto.AuthResponse, error)
+	RegisterDeviceToken(ctx context.Context, orgID, userID uint, req dto.DeviceTokenRequest) error
 }
 
 type authService struct {
 	userRepo  repository.UserRepository
 	roleRepo  repository.RoleRepository
-	jwtSecret string
+	tokenRepo repository.TokenRepository
+	publisher event.Publisher
+	secret    string
 	expHours  int
 }
 
-func NewAuthService(userRepo repository.UserRepository, roleRepo repository.RoleRepository, secret string, expHours int) AuthService {
+func NewAuthService(
+	userRepo repository.UserRepository,
+	roleRepo repository.RoleRepository,
+	tokenRepo repository.TokenRepository,
+	publisher event.Publisher,
+	secret string,
+	expHours int,
+) AuthService {
 	return &authService{
 		userRepo:  userRepo,
 		roleRepo:  roleRepo,
-		jwtSecret: secret,
+		tokenRepo: tokenRepo,
+		publisher: publisher,
+		secret:    secret,
 		expHours:  expHours,
 	}
 }
@@ -49,21 +64,27 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Aut
 
 	// Determine effective role (assuming first role for MVP)
 	var roleID uint
+	var roleVersion int
 	if len(user.Roles) > 0 {
 		roleID = user.Roles[0].ID
+		roleVersion = user.Roles[0].Version
 	}
 
-	// Generate Token
-	token, err := utils.GenerateToken(user.ID, user.OrganizationID, roleID, user.Email, s.jwtSecret, s.expHours)
+	// Generate Access Token
+	accessToken, err := utils.GenerateToken(user.ID, user.OrganizationID, roleID, roleVersion, user.Email, s.secret, s.expHours)
 	if err != nil {
-		return nil, errors.New("failed to generate token")
+		return nil, errors.New("failed to generate access token")
 	}
 
-	// Update last login (ignore errors natively here or perform async)
+	// Generate Refresh Token (30 days for mobile/web persistent)
+	refreshToken, err := utils.GenerateRefreshToken(user.ID, s.secret, 720) 
+	if err != nil {
+		return nil, errors.New("failed to generate refresh token")
+	}
 
 	return &dto.AuthResponse{
-		AccessToken:  token,
-		RefreshToken: "refresh-token-placeholder", // Add refresh token logic later
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 		ExpiresIn:    s.expHours * 3600,
 		User: dto.UserResponse{
 			ID:             user.ID,
@@ -106,6 +127,18 @@ func (s *authService) Register(ctx context.Context, req dto.UserCreateRequest) (
 		return nil, errors.New("failed to create user account")
 	}
 
+	// Emit EventUserCreated
+	go func() {
+		evt := event.Event{
+			Type:           event.EventUserCreated,
+			AggregateID:    user.ID,
+			OrganizationID: user.OrganizationID,
+			Payload:        user,
+			Timestamp:      time.Now().Unix(),
+		}
+		_ = s.publisher.Publish(context.Background(), evt)
+	}()
+
 	return &dto.UserResponse{
 		ID:             user.ID,
 		OrganizationID: user.OrganizationID,
@@ -113,4 +146,57 @@ func (s *authService) Register(ctx context.Context, req dto.UserCreateRequest) (
 		Email:          user.Email,
 		Status:         user.Status,
 	}, nil
+}
+
+func (s *authService) Refresh(ctx context.Context, refreshToken string) (*dto.AuthResponse, error) {
+	userID, err := utils.VerifyRefreshToken(refreshToken, s.secret)
+	if err != nil {
+		return nil, errors.New("invalid or expired refresh token")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, 0, userID)
+	if err != nil {
+		return nil, errors.New("user not found")
+	}
+
+	if user.Status != "active" {
+		return nil, errors.New("account is disabled")
+	}
+
+	// Determine effective role
+	var roleID uint
+	var roleVersion int
+	if len(user.Roles) > 0 {
+		roleID = user.Roles[0].ID
+		roleVersion = user.Roles[0].Version
+	}
+
+	accessToken, err := utils.GenerateToken(user.ID, user.OrganizationID, roleID, roleVersion, user.Email, s.secret, s.expHours)
+	if err != nil {
+		return nil, errors.New("failed to generate access token")
+	}
+
+	return &dto.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken, 
+		ExpiresIn:    s.expHours * 3600,
+		User: dto.UserResponse{
+			ID:             user.ID,
+			OrganizationID: user.OrganizationID,
+			Name:           user.Name,
+			Email:          user.Email,
+			Status:         user.Status,
+		},
+	}, nil
+}
+
+func (s *authService) RegisterDeviceToken(ctx context.Context, orgID, userID uint, req dto.DeviceTokenRequest) error {
+	token := &model.UserDeviceToken{
+		UserID:      userID,
+		DeviceToken: req.DeviceToken,
+		DeviceType:  req.DeviceType,
+	}
+	token.OrganizationID = orgID
+	
+	return s.tokenRepo.Register(ctx, token)
 }

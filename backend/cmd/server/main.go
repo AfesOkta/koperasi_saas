@@ -7,15 +7,20 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 
 	"github.com/koperasi-gresik/backend/config"
 	"github.com/koperasi-gresik/backend/internal/shared/database"
+	"github.com/koperasi-gresik/backend/internal/shared/database/seeds"
 	"github.com/koperasi-gresik/backend/internal/shared/event"
 	"github.com/koperasi-gresik/backend/internal/shared/middleware"
+	"github.com/koperasi-gresik/backend/internal/shared/notification"
+	"github.com/koperasi-gresik/backend/internal/shared/worker"
 
 	iamHandler "github.com/koperasi-gresik/backend/internal/modules/iam/handler"
 	iamRepo "github.com/koperasi-gresik/backend/internal/modules/iam/repository"
@@ -72,13 +77,19 @@ import (
 
 	notificationHandler "github.com/koperasi-gresik/backend/internal/modules/notification/handler"
 	notificationRepo "github.com/koperasi-gresik/backend/internal/modules/notification/repository"
+	notificationSvc "github.com/koperasi-gresik/backend/internal/modules/notification/service"
 
 	posHandler "github.com/koperasi-gresik/backend/internal/modules/pos/handler"
 	posRepo "github.com/koperasi-gresik/backend/internal/modules/pos/repository"
+	posService "github.com/koperasi-gresik/backend/internal/modules/pos/service"
 
 	shuHandler "github.com/koperasi-gresik/backend/internal/modules/shu/handler"
 	shuRepo "github.com/koperasi-gresik/backend/internal/modules/shu/repository"
 	shuService "github.com/koperasi-gresik/backend/internal/modules/shu/service"
+
+	closingHandler "github.com/koperasi-gresik/backend/internal/modules/closing/handler"
+	closingRepo "github.com/koperasi-gresik/backend/internal/modules/closing/repository"
+	closingService "github.com/koperasi-gresik/backend/internal/modules/closing/service"
 )
 
 func main() {
@@ -96,7 +107,14 @@ func main() {
 
 	// Connect to Redis
 	rdb := database.NewRedis(cfg.Redis)
-	_ = rdb // Will be used by modules
+
+	// Permission Cache (Redis-backed — zero DB queries in middleware)
+	permCache := middleware.NewPermissionCache(rdb, db)
+
+	// Seed global system permissions at startup (idempotent upsert)
+	if err := seeds.SeedPermissions(context.Background(), db); err != nil {
+		log.Printf("⚠️  Failed to seed permissions: %v", err)
+	}
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -129,6 +147,7 @@ func main() {
 	// Repositories
 	userRepository := iamRepo.NewUserRepository(db)
 	roleRepository := iamRepo.NewRoleRepository(db)
+	tokenRepository := iamRepo.NewTokenRepository(db)
 	orgRepository := orgRepo.NewOrganizationRepository(db)
 	memberRepository := memberRepo.NewMemberRepository(db)
 	savingRepository := savingRepo.NewSavingRepository(db)
@@ -136,36 +155,74 @@ func main() {
 	cashRepository := cashRepo.NewCashRepository(db)
 	loanRepository := loanRepo.NewLoanRepository(db)
 	inventoryRepository := inventoryRepo.NewInventoryRepository(db)
+	warehouseRepository := inventoryRepo.NewWarehouseRepository(db)
 	supplierRepository := supplierRepo.NewSupplierRepository(db)
 	salesRepository := salesRepo.NewSalesRepository(db)
 	purchasingRepository := purchasingRepo.NewPurchasingRepository(db)
 	auditRepository := auditRepo.NewAuditRepository(db)
 	billingRepository := billingRepo.NewBillingRepository(db)
-	notificationRepository := notificationRepo.NewNotificationRepository(db)
+	notificationRepoObj := notificationRepo.NewNotificationRepository(db)
 	posRepository := posRepo.NewPOSRepository(db)
 	shuRepository := shuRepo.NewSHURepository(db)
+	closingRepository := closingRepo.NewClosingRepository(db)
 
-	// Event Bus (In-Memory for MVP)
-	eventBus := event.NewMemoryEventBus()
+	// Event Bus (Redis Streams for Persistence)
+	eventBus := event.NewRedisEventBus(rdb, "publisher")
+	notifEventBus := event.NewRedisEventBus(rdb, "notification_group")
+	accountingEventBus := event.NewRedisEventBus(rdb, "accounting_group")
 	defer eventBus.Close()
 
 	// Services
-	authenticationService := iamService.NewAuthService(userRepository, roleRepository, cfg.JWT.Secret, cfg.JWT.ExpirationHours)
-	organizationService := orgService.NewOrganizationService(orgRepository, userRepository, roleRepository, db)
+	authenticationService := iamService.NewAuthService(userRepository, roleRepository, tokenRepository, eventBus, cfg.JWT.Secret, cfg.JWT.ExpirationHours)
+	organizationService := orgService.NewOrganizationService(orgRepository, userRepository, roleRepository, db, rdb)
 	membershipService := memberService.NewMemberService(memberRepository, authenticationService)
 	savingModuleService := savingService.NewSavingService(savingRepository, eventBus)
-	accountingModuleService := accountingService.NewAccountingService(accountingRepository)
+	reportModuleService := reportService.NewReportService(db, rdb)
+	accountingModuleService := accountingService.NewAccountingService(accountingRepository, reportModuleService)
 	cashModuleService := cashService.NewCashService(cashRepository)
 	loanModuleService := loanService.NewLoanService(loanRepository, eventBus)
-	inventoryModuleService := inventoryService.NewInventoryService(inventoryRepository)
+	inventoryModuleService := inventoryService.NewInventoryService(inventoryRepository, warehouseRepository)
 	supplierModuleService := supplierService.NewSupplierService(supplierRepository)
 	salesModuleService := salesService.NewSalesService(salesRepository, inventoryModuleService)
 	purchasingModuleService := purchasingService.NewPurchasingService(purchasingRepository, inventoryModuleService)
-	reportModuleService := reportService.NewReportService(db)
 	shuModuleService := shuService.NewSHUService(shuRepository)
+	warehouseModuleService := inventoryService.NewWarehouseService(warehouseRepository, inventoryRepository)
+	posModuleService := posService.NewPOSService(posRepository, inventoryModuleService)
+	closingModuleService := closingService.NewClosingService(closingRepository, loanRepository, savingRepository, accountingModuleService, orgRepository)
+	mobileModuleService := memberService.NewMobileService(memberRepository, savingRepository, loanRepository)
+
+	// Async Background Workers
+	taskDistributor := worker.NewRedisTaskDistributor(cfg.Redis)
+	workerServer := worker.NewServer(cfg.Redis, cfg.SMTP)
+	workerServer.RegisterClosingHandlers(closingModuleService) // Register EOD/EOM task handlers
+
+	// Automated Cron Scheduler (Asynq)
+	asynqScheduler := worker.NewScheduler(cfg.Redis)
+	// EOD runs every day at 01:00 AM
+	_ = asynqScheduler.RegisterTask("0 1 * * *", worker.TypeRunEOD, worker.PayloadRunEOD{Date: time.Now().AddDate(0, 0, -1).Format("2006-01-02")})
+	// EOM runs on the 1st of every month at 01:10 AM
+	_ = asynqScheduler.RegisterTask("10 1 1 * *", worker.TypeRunEOM, worker.PayloadRunEOM{Month: int(time.Now().Month()), Year: time.Now().Year()})
+
+	go func() {
+		if err := workerServer.Start(); err != nil {
+			logrus.Fatalf("[Asynq] Worker server failed: %v", err)
+		}
+	}()
+	go func() {
+		if err := asynqScheduler.Start(); err != nil {
+			logrus.Fatalf("[Asynq] Scheduler failed: %v", err)
+		}
+	}()
+	defer workerServer.Stop()
+	defer asynqScheduler.Stop()
+
+	// Start Notification Engine (Event Subscriber)
+	pushAdapter := notification.NewFCMAdapter()
+	notificationModuleService := notificationSvc.NewNotificationService(notificationRepoObj, tokenRepository, pushAdapter, notifEventBus, taskDistributor)
+	notificationModuleService.Start(context.Background())
 
 	// Start Accounting Event Handler
-	accountingEventHandler := accountingService.NewAccountingEventHandler(accountingModuleService, eventBus)
+	accountingEventHandler := accountingService.NewAccountingEventHandler(accountingModuleService, accountingEventBus)
 	go accountingEventHandler.Start(context.Background())
 
 	// Handlers
@@ -177,29 +234,40 @@ func main() {
 	cashModuleHandler := cashHandler.NewCashHandler(cashModuleService)
 	loanModuleHandler := loanHandler.NewLoanHandler(loanModuleService)
 	inventoryModuleHandler := inventoryHandler.NewInventoryHandler(inventoryModuleService)
+	warehouseModuleHandler := inventoryHandler.NewWarehouseHandler(warehouseModuleService)
 	supplierModuleHandler := supplierHandler.NewSupplierHandler(supplierModuleService)
 	salesModuleHandler := salesHandler.NewSalesHandler(salesModuleService)
 	purchasingModuleHandler := purchasingHandler.NewPurchasingHandler(purchasingModuleService)
 	reportModuleHandler := reportHandler.NewReportHandler(reportModuleService)
 	auditModuleHandler := auditHandler.NewAuditHandler(auditRepository)
 	billingModuleHandler := billingHandler.NewBillingHandler(billingRepository)
-	notificationModuleHandler := notificationHandler.NewNotificationHandler(notificationRepository)
-	posModuleHandler := posHandler.NewPOSHandler(posRepository)
+	notificationModuleHandler := notificationHandler.NewNotificationHandler(notificationRepoObj)
+	posModuleHandler := posHandler.NewPOSHandler(posModuleService)
 	shuModuleHandler := shuHandler.NewSHUHandler(shuModuleService)
+	closingModuleHandler := closingHandler.NewClosingHandler(closingModuleService)
+	mobileModuleHandler := memberHandler.NewMobileHandler(mobileModuleService)
 
 	// Register Routes
 	iamHandler.RegisterPublicRoutes(v1, authenticationHandler)
 	orgHandler.RegisterPublicRoutes(v1, organizationHandler)
 
+	// RBAC Management Routes
+	rbacRoleRepo := iamRepo.NewRoleRepository(db)
+	rbacRoleService := iamService.NewRoleService(rbacRoleRepo, db, permCache)
+	rbacRoleHandler := iamHandler.NewRoleHandler(rbacRoleService)
+	iamHandler.RegisterRoleRoutes(v1, rbacRoleHandler, authMid, tenantMid, permCache)
+
 	// Protected Routes (Apply middleware explicitly)
 	iamHandler.RegisterRoutes(v1, authenticationHandler, authMid, tenantMid)
 	orgHandler.RegisterRoutes(v1, organizationHandler, authMid, tenantMid)
 	memberHandler.RegisterRoutes(v1, membershipHandler, authMid, tenantMid)
+	memberHandler.RegisterMobileRoutes(v1, mobileModuleHandler, authMid, tenantMid)
 	savingHandler.RegisterRoutes(v1, savingsHandler, authMid, tenantMid, middleware.ModuleGuard(db, "savings"))
 	accountingHandler.RegisterRoutes(v1, accountingModuleHandler, authMid, tenantMid)
 	cashHandler.RegisterRoutes(v1, cashModuleHandler, authMid, tenantMid)
 	loanHandler.RegisterRoutes(v1, loanModuleHandler, authMid, tenantMid, middleware.ModuleGuard(db, "loans"))
 	inventoryHandler.RegisterRoutes(v1, inventoryModuleHandler, authMid, tenantMid)
+	inventoryHandler.RegisterWarehouseRoutes(v1, warehouseModuleHandler, authMid, tenantMid)
 	supplierHandler.RegisterRoutes(v1, supplierModuleHandler, authMid, tenantMid)
 	salesHandler.RegisterRoutes(v1, salesModuleHandler, authMid, tenantMid)
 	purchasingHandler.RegisterRoutes(v1, purchasingModuleHandler, authMid, tenantMid)
@@ -209,6 +277,11 @@ func main() {
 	notificationHandler.RegisterRoutes(v1, notificationModuleHandler, authMid, tenantMid)
 	posHandler.RegisterRoutes(v1, posModuleHandler, authMid, tenantMid)
 	shuHandler.RegisterRoutes(v1, shuModuleHandler, authMid, tenantMid)
+	closingHandler.RegisterRoutes(v1, closingModuleHandler, authMid) // Admin manual triggers
+
+	// Period Guard Middleware setup (Optional inclusion in other routes)
+	// Example: v1.Use(middleware.PeriodGuard(closingRepository)) 
+	// (applied after authMid/tenantMid to ensure we have context)
 
 	// Start server
 	go func() {

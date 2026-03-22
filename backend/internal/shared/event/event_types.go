@@ -31,6 +31,7 @@ const (
 	// Inventory Events
 	EventInventoryAdjusted = "inventory.adjusted"
 	EventStockTransferred  = "inventory.stock.transferred"
+	EventStockLow          = "inventory.stock.low"
 
 	// Purchasing Events
 	EventPurchaseOrderCreated = "purchase_order.created"

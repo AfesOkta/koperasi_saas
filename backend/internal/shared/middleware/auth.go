@@ -14,6 +14,7 @@ type Claims struct {
 	OrganizationID uint   `json:"organization_id"`
 	Email          string `json:"email"`
 	RoleID         uint   `json:"role_id"`
+	RoleVersion    int    `json:"role_version"` // Used for Redis cache key: perm:{role_id}:{role_version}
 	jwt.RegisteredClaims
 }
 
@@ -46,6 +47,7 @@ func Auth(secret string) fiber.Handler {
 		c.Locals("organization_id", claims.OrganizationID)
 		c.Locals("email", claims.Email)
 		c.Locals("role_id", claims.RoleID)
+		c.Locals("role_version", claims.RoleVersion)
 		c.Locals("claims", claims)
 
 		return c.Next()

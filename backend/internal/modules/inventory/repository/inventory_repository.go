@@ -22,7 +22,7 @@ type InventoryRepository interface {
 	UpdateProduct(ctx context.Context, product *model.Product) error
 
 	// Stock Operations (Atomic)
-	AdjustStock(ctx context.Context, product *model.Product, movement *model.StockMovement) error
+	AdjustStock(ctx context.Context, warehouseID, productID uint, movement *model.StockMovement) error
 	GetStockMovements(ctx context.Context, orgID, productID uint) ([]model.StockMovement, error)
 }
 
@@ -90,37 +90,56 @@ func (r *inventoryRepository) UpdateProduct(ctx context.Context, product *model.
 }
 
 // -- Stock Operations
-func (r *inventoryRepository) AdjustStock(ctx context.Context, product *model.Product, movement *model.StockMovement) error {
+func (r *inventoryRepository) AdjustStock(ctx context.Context, warehouseID, productID uint, movement *model.StockMovement) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Lock Product Row to prevent race conditions during concurrent sales/purchases
-		var lockedProduct model.Product
-		if err := tx.Clauses(gorm.Expr("FOR UPDATE")).First(&lockedProduct, product.ID).Error; err != nil {
+		// 1. Lock Product Row (Total Stock)
+		var product model.Product
+		if err := tx.Clauses(gorm.Expr("FOR UPDATE")).First(&product, productID).Error; err != nil {
 			return err
 		}
 
-		// 2. Adjust Stock
-		if movement.Type == "out" {
-			// Basic validation - some use cases might allow negative stock, but typically we prevent it.
-			// Implementing soft prevention here: if you want to allow negative stock, remove this check.
-			lockedProduct.Stock -= movement.Quantity
-		} else if movement.Type == "in" || movement.Type == "adj" {
-			// If it's an adjustment, we could either add/subtract based on positive/negative quantity
-			lockedProduct.Stock += movement.Quantity
+		// 2. Lock/Find Warehouse Item
+		var item model.WarehouseItem
+		err := tx.Clauses(gorm.Expr("FOR UPDATE")).
+			Where("warehouse_id = ? AND product_id = ?", warehouseID, productID).
+			First(&item).Error
+		
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
 		}
 
-		movement.BalanceAfter = lockedProduct.Stock
+		if err == gorm.ErrRecordNotFound {
+			item = model.WarehouseItem{
+				WarehouseID: warehouseID,
+				ProductID:   productID,
+				Quantity:    0,
+			}
+			item.OrganizationID = product.OrganizationID
+		}
 
-		// 3. Save Movement Record
+		// 3. Adjust Quantities
+		qtyChange := movement.Quantity
+		if movement.Type == "out" || movement.Type == "transfer_out" {
+			qtyChange = -movement.Quantity
+		}
+
+		product.Stock += qtyChange
+		item.Quantity += qtyChange
+
+		movement.BalanceAfter = item.Quantity
+		movement.WarehouseID = warehouseID
+
+		// 4. Save Changes
+		if err := tx.Save(&product).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&item).Error; err != nil {
+			return err
+		}
 		if err := tx.Create(movement).Error; err != nil {
 			return err
 		}
 
-		// 4. Update Product Stock
-		if err := tx.Save(&lockedProduct).Error; err != nil {
-			return err
-		}
-
-		product.Stock = lockedProduct.Stock // Update the caller's struct
 		return nil
 	})
 }

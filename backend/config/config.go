@@ -13,6 +13,7 @@ type Config struct {
 	Kafka    KafkaConfig
 	JWT      JWTConfig
 	Storage  StorageConfig
+	SMTP     SMTPConfig
 }
 
 type AppConfig struct {
@@ -56,6 +57,15 @@ type StorageConfig struct {
 	Region    string
 }
 
+type SMTPConfig struct {
+	Host      string
+	Port      int
+	Username  string
+	Password  string
+	FromEmail string
+	FromName  string
+}
+
 func Load() *Config {
 	return &Config{
 		App: AppConfig{
@@ -92,6 +102,14 @@ func Load() *Config {
 			AccessKey: getEnv("STORAGE_ACCESS_KEY", ""),
 			SecretKey: getEnv("STORAGE_SECRET_KEY", ""),
 			Region:    getEnv("STORAGE_REGION", "us-east-1"),
+		},
+		SMTP: SMTPConfig{
+			Host:      getEnv("SMTP_HOST", "smtp.mailtrap.io"),
+			Port:      getEnvInt("SMTP_PORT", 2525),
+			Username:  getEnv("SMTP_USERNAME", ""),
+			Password:  getEnv("SMTP_PASSWORD", ""),
+			FromEmail: getEnv("SMTP_FROM_EMAIL", "noreply@koperasi.local"),
+			FromName:  getEnv("SMTP_FROM_NAME", "Koperasi System"),
 		},
 	}
 }

@@ -13,6 +13,12 @@ type LoanProduct struct {
 	MaxAmount    float64 `json:"max_amount" gorm:"type:decimal(15,2);not null"`
 	MaxTerm      int     `json:"max_term" gorm:"not null"`       // Maximum period in months
 	Status       string  `json:"status" gorm:"default:'active'"` // active, inactive
+
+	// Penalty Configuration (Denda)
+	PenaltyType      string  `json:"penalty_type" gorm:"size:20;default:'percentage'"` // flat, percentage
+	PenaltyRate      float64 `json:"penalty_rate" gorm:"type:decimal(15,4);default:0"` // 0.001 for 0.1% or 1000 for flat
+	PenaltyGraceDays int     `json:"penalty_grace_days" gorm:"default:0"`
+	PenaltyCap       float64 `json:"penalty_cap" gorm:"type:decimal(15,2);default:0"`
 }
 
 // Loan represents a specific loan application and its current state.
@@ -31,6 +37,9 @@ type Loan struct {
 
 	Status      string  `json:"status" gorm:"default:'pending'"` // pending, approved, rejected, active, paid, defaulted
 	ApprovedAt  *string `json:"approved_at" gorm:"type:timestamp"`
+	ApprovedBy  *uint   `json:"approved_by" gorm:"index"`
+	RejectedAt  *string `json:"rejected_at" gorm:"type:timestamp"`
+	RejectedBy  *uint   `json:"rejected_by" gorm:"index"`
 	DisbursedAt *string `json:"disbursed_at" gorm:"type:timestamp"`
 
 	Schedules []LoanSchedule `json:"schedules,omitempty" gorm:"foreignKey:LoanID"`

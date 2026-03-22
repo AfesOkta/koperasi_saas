@@ -18,6 +18,7 @@ type MemberRepository interface {
 
 	AddDocument(ctx context.Context, doc *model.MemberDocument) error
 	AddCard(ctx context.Context, card *model.MemberCard) error
+	GetByUserID(ctx context.Context, orgID, userID uint) (*model.Member, error)
 }
 
 type memberRepository struct {
@@ -86,4 +87,12 @@ func (r *memberRepository) AddDocument(ctx context.Context, doc *model.MemberDoc
 
 func (r *memberRepository) AddCard(ctx context.Context, card *model.MemberCard) error {
 	return r.db.WithContext(ctx).Create(card).Error
+}
+
+func (r *memberRepository) GetByUserID(ctx context.Context, orgID, userID uint) (*model.Member, error) {
+	var member model.Member
+	err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND user_id = ?", orgID, userID).
+		First(&member).Error
+	return &member, err
 }

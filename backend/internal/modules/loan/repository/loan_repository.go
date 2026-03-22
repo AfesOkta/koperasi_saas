@@ -18,9 +18,13 @@ type LoanRepository interface {
 	GetLoanByID(ctx context.Context, orgID, id uint) (*model.Loan, error)
 	ListLoansByMember(ctx context.Context, orgID, memberID uint) ([]model.Loan, error)
 	UpdateLoanStatus(ctx context.Context, loan *model.Loan) error
+	ListLoansByStatus(ctx context.Context, orgID uint, statuses []string) ([]model.Loan, error)
 
 	// Payments
 	RecordPayment(ctx context.Context, loan *model.Loan, payment *model.LoanPayment, schedulesToUpdate []model.LoanSchedule) error
+
+	// Utils
+	GetDB() *gorm.DB
 }
 
 type loanRepository struct {
@@ -29,6 +33,10 @@ type loanRepository struct {
 
 func NewLoanRepository(db *gorm.DB) LoanRepository {
 	return &loanRepository{db: db}
+}
+
+func (r *loanRepository) GetDB() *gorm.DB {
+	return r.db
 }
 
 func (r *loanRepository) CreateProduct(ctx context.Context, product *model.LoanProduct) error {
@@ -74,6 +82,15 @@ func (r *loanRepository) ListLoansByMember(ctx context.Context, orgID, memberID 
 
 func (r *loanRepository) UpdateLoanStatus(ctx context.Context, loan *model.Loan) error {
 	return r.db.WithContext(ctx).Save(loan).Error
+}
+
+func (r *loanRepository) ListLoansByStatus(ctx context.Context, orgID uint, statuses []string) ([]model.Loan, error) {
+	var loans []model.Loan
+	err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND status IN ?", orgID, statuses).
+		Preload("Schedules").
+		Find(&loans).Error
+	return loans, err
 }
 
 func (r *loanRepository) RecordPayment(ctx context.Context, loan *model.Loan, payment *model.LoanPayment, schedulesToUpdate []model.LoanSchedule) error {

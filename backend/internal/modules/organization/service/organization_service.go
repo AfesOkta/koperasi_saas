@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	iamModel "github.com/koperasi-gresik/backend/internal/modules/iam/model"
@@ -11,8 +13,10 @@ import (
 	"github.com/koperasi-gresik/backend/internal/modules/organization/dto"
 	"github.com/koperasi-gresik/backend/internal/modules/organization/model"
 	"github.com/koperasi-gresik/backend/internal/modules/organization/repository"
+	"github.com/koperasi-gresik/backend/internal/shared/database/seeds"
 	"github.com/koperasi-gresik/backend/internal/shared/pagination"
 	"github.com/koperasi-gresik/backend/internal/shared/utils"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -29,14 +33,16 @@ type organizationService struct {
 	userRepo iamRepo.UserRepository
 	roleRepo iamRepo.RoleRepository
 	db       *gorm.DB
+	rdb      *redis.Client
 }
 
-func NewOrganizationService(repo repository.OrganizationRepository, userRepo iamRepo.UserRepository, roleRepo iamRepo.RoleRepository, db *gorm.DB) OrganizationService {
+func NewOrganizationService(repo repository.OrganizationRepository, userRepo iamRepo.UserRepository, roleRepo iamRepo.RoleRepository, db *gorm.DB, rdb *redis.Client) OrganizationService {
 	return &organizationService{
 		repo:     repo,
 		userRepo: userRepo,
 		roleRepo: roleRepo,
 		db:       db,
+		rdb:      rdb,
 	}
 }
 
@@ -59,12 +65,29 @@ func (s *organizationService) Create(ctx context.Context, req dto.OrganizationCr
 }
 
 func (s *organizationService) GetByID(ctx context.Context, id uint) (*dto.OrganizationResponse, error) {
+	// 1. Try Redis cache (24 Hour TTL)
+	cacheKey := fmt.Sprintf("org:cfg:%d", id)
+	if val, err := s.rdb.Get(ctx, cacheKey).Result(); err == nil && val != "" {
+		var cachedRes dto.OrganizationResponse
+		if err := json.Unmarshal([]byte(val), &cachedRes); err == nil {
+			return &cachedRes, nil
+		}
+	}
+
+	// 2. Fetch from DB
 	org, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, errors.New("organization not found")
 	}
 
-	return s.mapToResponse(org), nil
+	res := s.mapToResponse(org)
+
+	// 3. Cache the result
+	if jsonStr, err := json.Marshal(res); err == nil {
+		s.rdb.Set(ctx, cacheKey, jsonStr, 24*time.Hour)
+	}
+
+	return res, nil
 }
 
 func (s *organizationService) List(ctx context.Context, params pagination.Params) ([]dto.OrganizationResponse, int64, error) {
@@ -96,7 +119,13 @@ func (s *organizationService) UpdateSettings(ctx context.Context, id uint, setti
 		return nil, errors.New("failed to update organization settings")
 	}
 
-	return s.mapToResponse(org), nil
+	res := s.mapToResponse(org)
+
+	// Invalidate Cache
+	cacheKey := fmt.Sprintf("org:cfg:%d", id)
+	s.rdb.Del(ctx, cacheKey)
+
+	return res, nil
 }
 
 func (s *organizationService) mapToResponse(org *model.Organization) *dto.OrganizationResponse {
@@ -155,6 +184,17 @@ func (s *organizationService) Onboard(ctx context.Context, req dto.OnboardingReq
 
 		if err := tx.Create(user).Error; err != nil {
 			return err
+		}
+
+		// 4. Seed system roles for the new organization
+		if err := seeds.SeedSystemRoles(ctx, tx, org.ID); err != nil {
+			return err
+		}
+
+		// 5. Assign admin role to the admin user
+		var adminRole iamModel.Role
+		if err := tx.Where("organization_id = ? AND name = ?", org.ID, "admin").First(&adminRole).Error; err == nil {
+			tx.Exec("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?) ON CONFLICT DO NOTHING", user.ID, adminRole.ID)
 		}
 
 		return nil

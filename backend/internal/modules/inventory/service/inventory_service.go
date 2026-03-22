@@ -23,14 +23,21 @@ type InventoryService interface {
 	// Stock Operations
 	AdjustStock(ctx context.Context, orgID, productID uint, req dto.StockMovementRequest) (*dto.StockMovementResponse, error)
 	GetStockHistory(ctx context.Context, orgID, productID uint) ([]dto.StockMovementResponse, error)
+
+	// Warehouses (Internal delegation)
+	ListWarehouses(ctx context.Context, orgID uint) ([]dto.WarehouseResponse, error)
 }
 
 type inventoryService struct {
-	repo repository.InventoryRepository
+	repo          repository.InventoryRepository
+	warehouseRepo repository.WarehouseRepository
 }
 
-func NewInventoryService(repo repository.InventoryRepository) InventoryService {
-	return &inventoryService{repo: repo}
+func NewInventoryService(repo repository.InventoryRepository, warehouseRepo repository.WarehouseRepository) InventoryService {
+	return &inventoryService{
+		repo:          repo,
+		warehouseRepo: warehouseRepo,
+	}
 }
 
 // Categories
@@ -106,13 +113,21 @@ func (s *inventoryService) GetProduct(ctx context.Context, orgID, productID uint
 
 // Stock Operations
 func (s *inventoryService) AdjustStock(ctx context.Context, orgID, productID uint, req dto.StockMovementRequest) (*dto.StockMovementResponse, error) {
-	product, err := s.repo.GetProductByID(ctx, orgID, productID)
-	if err != nil {
-		return nil, err
+	// 1. Resolve Warehouse
+	warehouseID := req.WarehouseID
+	if warehouseID == 0 {
+		// Fallback to Main Warehouse
+		wh, err := s.warehouseRepo.GetWarehouseByCode(ctx, orgID, "WH-MAIN")
+		if err != nil {
+			return nil, err
+		}
+		warehouseID = wh.ID
 	}
 
+	// 2. Prepare Movement
 	movement := &model.StockMovement{
-		ProductID:       product.ID,
+		ProductID:       productID,
+		WarehouseID:     warehouseID,
 		ReferenceNumber: utils.GenerateCode("STK"),
 		Type:            req.Type,
 		Quantity:        req.Quantity,
@@ -122,12 +137,31 @@ func (s *inventoryService) AdjustStock(ctx context.Context, orgID, productID uin
 	}
 	movement.OrganizationID = orgID
 
-	// NOTE: Quantity direction manipulation handled securely at atomic query level inside repo
-	if err := s.repo.AdjustStock(ctx, product, movement); err != nil {
+	// 3. Atomic Adjustment
+	if err := s.repo.AdjustStock(ctx, warehouseID, productID, movement); err != nil {
 		return nil, err
 	}
 
 	return s.mapStockMovementToResponse(movement), nil
+}
+
+func (s *inventoryService) ListWarehouses(ctx context.Context, orgID uint) ([]dto.WarehouseResponse, error) {
+	warehouses, err := s.warehouseRepo.ListWarehouses(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	var res []dto.WarehouseResponse
+	for _, w := range warehouses {
+		res = append(res, dto.WarehouseResponse{
+			ID:          w.ID,
+			Code:        w.Code,
+			Name:        w.Name,
+			Description: w.Description,
+			Address:     w.Address,
+			IsActive:    w.IsActive,
+		})
+	}
+	return res, nil
 }
 
 func (s *inventoryService) GetStockHistory(ctx context.Context, orgID, productID uint) ([]dto.StockMovementResponse, error) {

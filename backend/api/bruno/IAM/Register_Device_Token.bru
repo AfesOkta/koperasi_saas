@@ -1,0 +1,18 @@
+meta {
+  name: Register Device Token
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/auth/device-token
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "device_token": "fcm_token_example_123",
+    "device_type": "android"
+  }
+}

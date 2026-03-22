@@ -11,6 +11,7 @@ import (
 	"github.com/koperasi-gresik/backend/internal/modules/accounting/dto"
 	"github.com/koperasi-gresik/backend/internal/modules/accounting/model"
 	"github.com/koperasi-gresik/backend/internal/modules/accounting/repository"
+	reportService "github.com/koperasi-gresik/backend/internal/modules/report/service"
 	"github.com/koperasi-gresik/backend/internal/shared/utils"
 )
 
@@ -41,11 +42,15 @@ const (
 )
 
 type accountingService struct {
-	repo repository.AccountingRepository
+	repo          repository.AccountingRepository
+	reportService reportService.ReportService
 }
 
-func NewAccountingService(repo repository.AccountingRepository) AccountingService {
-	return &accountingService{repo: repo}
+func NewAccountingService(repo repository.AccountingRepository, reportService reportService.ReportService) AccountingService {
+	return &accountingService{
+		repo:          repo,
+		reportService: reportService,
+	}
 }
 
 func (s *accountingService) CreateAccount(ctx context.Context, orgID uint, req dto.AccountCreateRequest) (*dto.AccountResponse, error) {
@@ -237,6 +242,9 @@ func (s *accountingService) createJournalEntry(ctx context.Context, orgID uint, 
 		return nil, err
 	}
 
+	// 4. Invalidate Reports Cache
+	_ = s.reportService.InvalidateCache(ctx, orgID)
+
 	return s.mapJournalEntryToResponse(entry), nil
 }
 
@@ -303,6 +311,9 @@ func (s *accountingService) ReverseJournalEntry(ctx context.Context, orgID, jour
 		// Log error but don't fail - reversal was created successfully
 		log.Printf("Failed to mark original entry as voided: %v", err)
 	}
+
+	// 4. Invalidate Reports Cache
+	_ = s.reportService.InvalidateCache(ctx, orgID)
 
 	return s.mapJournalEntryToResponse(reversalEntry), nil
 }

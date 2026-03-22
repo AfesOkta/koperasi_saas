@@ -189,19 +189,41 @@ func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID uint) error
 		return err
 	}
 
-	payload := event.LoanTransactionPayload{
-		MemberID:      loan.MemberID,
-		Amount:        loan.PrincipalAmount,
-		Description:   fmt.Sprintf("Disbursement for Loan %s", loan.LoanNumber),
+	// Fetch member email and user_id for notification
+	var memberInfo struct {
+		Email  string
+		UserID uint
 	}
+	s.repo.GetDB().Table("members").Select("email, user_id").Where("id = ?", loan.MemberID).Scan(&memberInfo)
+
 	evt := event.Event{
-		Type:           event.EventLoanDisbursed,
+		Type:           event.EventLoanApproved,
 		AggregateID:    loan.ID,
 		OrganizationID: orgID,
-		Payload:        payload,
+		Payload: map[string]interface{}{
+			"loan_number":  loan.LoanNumber,
+			"member_email": memberInfo.Email,
+			"user_id":      memberInfo.UserID,
+		},
+		Timestamp: time.Now().Unix(),
 	}
+
 	if s.publisher != nil {
 		_ = s.publisher.Publish(ctx, evt)
+		
+		// Also emit disbursed event for accounting/other logic if needed
+		disbursedEvt := event.Event{
+			Type:           event.EventLoanDisbursed,
+			AggregateID:    loan.ID,
+			OrganizationID: orgID,
+			Payload: event.LoanTransactionPayload{
+				MemberID:    loan.MemberID,
+				Amount:      loan.PrincipalAmount,
+				Description: fmt.Sprintf("Disbursement for Loan %s", loan.LoanNumber),
+			},
+			Timestamp: time.Now().Unix(),
+		}
+		_ = s.publisher.Publish(ctx, disbursedEvt)
 	}
 
 	return nil

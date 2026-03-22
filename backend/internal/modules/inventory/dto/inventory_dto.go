@@ -11,6 +11,22 @@ type CategoryResponse struct {
 	Description string `json:"description"`
 }
 
+type WarehouseResponse struct {
+	ID          uint   `json:"id"`
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Address     string `json:"address"`
+	IsActive    bool   `json:"is_active"`
+}
+
+type WarehouseCreateRequest struct {
+	Code        string `json:"code" validate:"required"`
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description" validate:"omitempty"`
+	Address     string `json:"address" validate:"omitempty"`
+}
+
 type ProductCreateRequest struct {
 	CategoryID  uint    `json:"category_id" validate:"omitempty"`
 	SKU         string  `json:"sku" validate:"required"`
@@ -37,7 +53,8 @@ type ProductResponse struct {
 }
 
 type StockMovementRequest struct {
-	Type            string `json:"type" validate:"required,oneof=in out adj"`
+	WarehouseID     uint   `json:"warehouse_id"` // Optional, defaults to main
+	Type            string `json:"type" validate:"required,oneof=in out adj transfer_in transfer_out transit"`
 	Quantity        int    `json:"quantity" validate:"required"`
 	Notes           string `json:"notes" validate:"omitempty"`
 	RelatedEntity   string `json:"related_entity" validate:"omitempty"`
@@ -53,4 +70,22 @@ type StockMovementResponse struct {
 	BalanceAfter    int    `json:"balance_after"`
 	Notes           string `json:"notes"`
 	CreatedAt       string `json:"created_at"`
+}
+
+type TransferCreateRequest struct {
+	ProductID       uint   `json:"product_id" validate:"required"`
+	FromWarehouseID uint   `json:"from_warehouse_id" validate:"required"`
+	ToWarehouseID   uint   `json:"to_warehouse_id" validate:"required"`
+	Quantity        int    `json:"quantity" validate:"required,gt=0"`
+	Notes           string `json:"notes" validate:"omitempty"`
+}
+
+type TransferResponse struct {
+	ID              uint              `json:"id"`
+	ReferenceNumber string            `json:"reference_number"`
+	FromWarehouse   WarehouseResponse `json:"from_warehouse"`
+	ToWarehouse     WarehouseResponse `json:"to_warehouse"`
+	Status          string            `json:"status"`
+	Notes           string            `json:"notes"`
+	CreatedAt       string            `json:"created_at"`
 }

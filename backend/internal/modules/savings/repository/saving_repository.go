@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/koperasi-gresik/backend/internal/modules/savings/model"
 	"gorm.io/gorm"
@@ -23,6 +24,12 @@ type SavingRepository interface {
 	// Transactions
 	ExecuteTransaction(ctx context.Context, account *model.SavingAccount, transaction *model.SavingTransaction) error
 	ListTransactionsByAccount(ctx context.Context, orgID, accountID uint) ([]model.SavingTransaction, error)
+
+	// Utils
+	ListAccounts(ctx context.Context, orgID uint) ([]model.SavingAccount, error)
+	ListAccountsByMember(ctx context.Context, orgID, memberID uint) ([]model.SavingAccount, error)
+	GetMinBalance(ctx context.Context, accountID uint, month int, year int) (float64, error)
+	GetDB() *gorm.DB
 }
 
 type savingRepository struct {
@@ -122,4 +129,60 @@ func (r *savingRepository) ListTransactionsByAccount(ctx context.Context, orgID,
 		Order("created_at DESC").
 		Find(&txns).Error
 	return txns, err
+}
+
+func (r *savingRepository) ListAccounts(ctx context.Context, orgID uint) ([]model.SavingAccount, error) {
+	var accounts []model.SavingAccount
+	err := r.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&accounts).Error
+	return accounts, err
+}
+
+func (r *savingRepository) ListAccountsByMember(ctx context.Context, orgID, memberID uint) ([]model.SavingAccount, error) {
+	var accounts []model.SavingAccount
+	err := r.db.WithContext(ctx).Where("organization_id = ? AND member_id = ?", orgID, memberID).Find(&accounts).Error
+	return accounts, err
+}
+
+func (r *savingRepository) GetMinBalance(ctx context.Context, accountID uint, month int, year int) (float64, error) {
+	// Formula: The minimum 'balance_after' during the month. 
+	// If no transactions in the month, current balance is likely unchanged from previous month.
+	// But we need to handle the case where the account was opened mid-month.
+	
+	var minVal struct {
+		MinBalance float64
+	}
+	
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, 0)
+
+	err := r.db.WithContext(ctx).Table("saving_transactions").
+		Select("MIN(balance_after) as min_balance").
+		Where("saving_account_id = ? AND created_at >= ? AND created_at < ?", accountID, startDate, endDate).
+		Scan(&minVal).Error
+	
+	if err != nil {
+		return 0, err
+	}
+
+	// If no transactions, get the latest balance before the month started
+	if minVal.MinBalance == 0 {
+		var lastTxn model.SavingTransaction
+		err = r.db.WithContext(ctx).
+			Where("saving_account_id = ? AND created_at < ?", accountID, startDate).
+			Order("created_at DESC").
+			First(&lastTxn).Error
+		if err == nil {
+			return lastTxn.BalanceAfter, nil
+		}
+		// If still nothing (brand new account), get current balance
+		var acc model.SavingAccount
+		r.db.WithContext(ctx).First(&acc, accountID)
+		return acc.Balance, nil
+	}
+
+	return minVal.MinBalance, nil
+}
+
+func (r *savingRepository) GetDB() *gorm.DB {
+	return r.db
 }

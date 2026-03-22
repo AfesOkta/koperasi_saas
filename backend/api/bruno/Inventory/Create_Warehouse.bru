@@ -1,0 +1,20 @@
+meta {
+  name: Create Warehouse
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/inventory/warehouses
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "code": "WH-EAST",
+    "name": "East Warehouse",
+    "description": "Main distribution center for eastern branch.",
+    "address": "Jl. Raya Timur No. 45"
+  }
+}
