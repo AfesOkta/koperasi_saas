@@ -4,6 +4,7 @@ import "./globals.css";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DevToolsHider } from "@/components/dev-tools-hider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,8 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
+        <DevToolsHider />
         <TooltipProvider>
           <SidebarProvider>
             <AppSidebar />

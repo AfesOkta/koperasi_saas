@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import {
   AudioWaveform,
@@ -32,7 +34,7 @@ const data = {
   user: {
     name: "Admin",
     email: "admin@koperasisaas.com",
-    avatar: "/avatars/admin.png",
+    avatar: "",
   },
   teams: [
     {

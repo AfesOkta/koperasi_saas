@@ -25,12 +25,9 @@ export function NavProjects({
       <SidebarMenu>
         {projects.map((item) => (
           <SidebarMenuItem key={item.name}>
-            {/* @ts-ignore */}
-            <SidebarMenuButton>
-              <a href={item.url}>
-                <item.icon />
-                <span>{item.name}</span>
-              </a>
+            <SidebarMenuButton render={<a href={item.url} />}>
+              <item.icon />
+              <span>{item.name}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ))}
