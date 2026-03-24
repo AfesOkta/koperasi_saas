@@ -21,7 +21,8 @@ type LoanService interface {
 	ApplyForLoan(ctx context.Context, orgID uint, req dto.LoanApplicationRequest) (*dto.LoanResponse, error)
 	GetLoanByID(ctx context.Context, orgID, id uint) (*dto.LoanResponse, error)
 
-	ApproveLoan(ctx context.Context, orgID, loanID uint) error
+	ApproveLoan(ctx context.Context, orgID, loanID, approverID uint, role string, req dto.ApprovalRequest) error
+	RejectLoan(ctx context.Context, orgID, loanID, rejectorID uint, role string, req dto.ApprovalRequest) error
 	RecordPayment(ctx context.Context, orgID, loanID uint, req dto.LoanPaymentRequest) (*dto.LoanPaymentResponse, error)
 }
 
@@ -67,6 +68,16 @@ func (s *loanService) ListProducts(ctx context.Context, orgID uint) ([]dto.LoanP
 }
 
 func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.LoanApplicationRequest) (*dto.LoanResponse, error) {
+	// 1. Check if member has outstanding loan
+	hasOutstanding, err := s.repo.HasOutstandingLoan(ctx, orgID, req.MemberID)
+	if err != nil {
+		return nil, err
+	}
+	if hasOutstanding {
+		return nil, errors.New("anggota masih memiliki tanggungan pinjaman yang belum lunas")
+	}
+
+	// 2. Validate product
 	product, err := s.repo.GetProductByID(ctx, orgID, req.LoanProductID)
 	if err != nil {
 		return nil, errors.New("loan product not found")
@@ -79,18 +90,26 @@ func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.Loan
 		return nil, errors.New("requested term exceeds product maximum")
 	}
 
+	// 3. Set disbursement method default
+	disbursementMethod := req.DisbursementMethod
+	if disbursementMethod == "" {
+		disbursementMethod = "transfer"
+	}
+
 	loan := &model.Loan{
-		MemberID:        req.MemberID,
-		LoanProductID:   req.LoanProductID,
-		LoanNumber:      utils.GenerateCode("LOAN"),
-		PrincipalAmount: req.PrincipalAmount,
-		InterestRate:    product.InterestRate,
-		TermMonths:      req.TermMonths,
-		Status:          "pending",
+		MemberID:           req.MemberID,
+		LoanProductID:      req.LoanProductID,
+		LoanNumber:         utils.GenerateCode("LOAN"),
+		PrincipalAmount:    req.PrincipalAmount,
+		InterestRate:       product.InterestRate,
+		TermMonths:         req.TermMonths,
+		Purpose:            req.Purpose,
+		DisbursementMethod: disbursementMethod,
+		Status:             "pending",
 	}
 	loan.OrganizationID = orgID
 
-	// Generate schedules (Flat vs Reducing Balance)
+	// 4. Generate schedules (Flat vs Reducing Balance)
 	var schedules []model.LoanSchedule
 	var totalInterest, expectedTotal float64
 
@@ -104,17 +123,17 @@ func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.Loan
 
 		expectedTotal = pmt * n
 		totalInterest = expectedTotal - req.PrincipalAmount
-		
+
 		loan.TotalInterest = totalInterest
 		loan.ExpectedTotal = expectedTotal
 		loan.Outstanding = expectedTotal
-		
+
 		balance := req.PrincipalAmount
 		now := time.Now()
 		for i := 1; i <= req.TermMonths; i++ {
 			interestForMonth := balance * r
 			principalForMonth := pmt - interestForMonth
-			
+
 			// Adjust last month rounding
 			if i == req.TermMonths {
 				principalForMonth = balance
@@ -132,7 +151,7 @@ func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.Loan
 			}
 			schedule.OrganizationID = orgID
 			schedules = append(schedules, schedule)
-			
+
 			balance -= principalForMonth
 		}
 	} else {
@@ -167,28 +186,129 @@ func (s *loanService) ApplyForLoan(ctx context.Context, orgID uint, req dto.Loan
 		return nil, err
 	}
 
+	// 5. If collateral provided, save it
+	if req.Collateral != nil {
+		coll := &model.LoanCollateral{
+			LoanID:      loan.ID,
+			Type:        req.Collateral.Type,
+			Description: req.Collateral.Description,
+			DocumentURL: req.Collateral.DocumentURL,
+		}
+		coll.OrganizationID = orgID
+		if err := s.repo.CreateCollateral(ctx, coll); err != nil {
+			return nil, err
+		}
+		loan.Collaterals = append(loan.Collaterals, *coll)
+	}
+
 	return s.mapLoanToResponse(loan), nil
 }
 
-func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID uint) error {
+// ApproveLoan handles multi-level approval workflow.
+// Basic plan: Staff -> Supervisor (pending -> staff_approved -> active)
+// Professional/Enterprise: Staff -> Supervisor -> Manager (pending -> staff_approved -> supervisor_approved -> active)
+func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID, approverID uint, role string, req dto.ApprovalRequest) error {
 	loan, err := s.repo.GetLoanByID(ctx, orgID, loanID)
 	if err != nil {
 		return err
 	}
 
-	if loan.Status != "pending" {
-		return errors.New("only pending loans can be approved")
+	// Determine allowed status transition based on role
+	var nextStatus string
+	switch role {
+	case "staff":
+		if loan.Status != "pending" {
+			return errors.New("staff hanya bisa menyetujui pinjaman berstatus pending")
+		}
+		nextStatus = "staff_approved"
+	case "supervisor":
+		if loan.Status != "staff_approved" {
+			return errors.New("supervisor hanya bisa menyetujui setelah staff")
+		}
+		// For Basic plan: supervisor is the final approver -> active
+		// For Professional/Enterprise: supervisor_approved, then manager approves
+		// TODO: Check organization plan tier. For now, use supervisor_approved.
+		nextStatus = "supervisor_approved"
+	case "manager":
+		if loan.Status != "supervisor_approved" {
+			return errors.New("manager hanya bisa menyetujui setelah supervisor")
+		}
+		nextStatus = "active"
+	default:
+		return errors.New("role tidak dikenali")
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	loan.Status = "active"
-	loan.ApprovedAt = &now
-	loan.DisbursedAt = &now // For MVP, assume immediate disbursement
+	loan.Status = nextStatus
+
+	// If status becomes active, set approval and disbursement timestamps
+	if nextStatus == "active" {
+		now := time.Now().UTC().Format(time.RFC3339)
+		loan.ApprovedAt = &now
+		loan.ApprovedBy = &approverID
+		loan.DisbursedAt = &now // For MVP, assume immediate disbursement
+	}
+
+	// Record approval log
+	approvalLog := &model.ApprovalLog{
+		LoanID:     loan.ID,
+		ApproverID: approverID,
+		Role:       role,
+		Action:     "approve",
+		Notes:      req.Notes,
+	}
+	approvalLog.OrganizationID = orgID
+
+	if err := s.repo.CreateApprovalLog(ctx, approvalLog); err != nil {
+		return err
+	}
 
 	if err := s.repo.UpdateLoanStatus(ctx, loan); err != nil {
 		return err
 	}
 
+	// Publish events if loan becomes active
+	if nextStatus == "active" {
+		s.publishLoanApprovedEvents(ctx, loan, orgID)
+	}
+
+	return nil
+}
+
+// RejectLoan rejects a loan application at any approval step.
+func (s *loanService) RejectLoan(ctx context.Context, orgID, loanID, rejectorID uint, role string, req dto.ApprovalRequest) error {
+	loan, err := s.repo.GetLoanByID(ctx, orgID, loanID)
+	if err != nil {
+		return err
+	}
+
+	// Can only reject non-final status loans
+	if loan.Status == "active" || loan.Status == "paid" || loan.Status == "defaulted" || loan.Status == "rejected" {
+		return errors.New("pinjaman dengan status ini tidak bisa ditolak")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	loan.Status = "rejected"
+	loan.RejectedAt = &now
+	loan.RejectedBy = &rejectorID
+
+	// Record rejection log
+	rejectionLog := &model.ApprovalLog{
+		LoanID:     loan.ID,
+		ApproverID: rejectorID,
+		Role:       role,
+		Action:     "reject",
+		Notes:      req.Notes,
+	}
+	rejectionLog.OrganizationID = orgID
+
+	if err := s.repo.CreateApprovalLog(ctx, rejectionLog); err != nil {
+		return err
+	}
+
+	return s.repo.UpdateLoanStatus(ctx, loan)
+}
+
+func (s *loanService) publishLoanApprovedEvents(ctx context.Context, loan *model.Loan, orgID uint) {
 	// Fetch member email and user_id for notification
 	var memberInfo struct {
 		Email  string
@@ -210,7 +330,7 @@ func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID uint) error
 
 	if s.publisher != nil {
 		_ = s.publisher.Publish(ctx, evt)
-		
+
 		// Also emit disbursed event for accounting/other logic if needed
 		disbursedEvt := event.Event{
 			Type:           event.EventLoanDisbursed,
@@ -225,8 +345,6 @@ func (s *loanService) ApproveLoan(ctx context.Context, orgID, loanID uint) error
 		}
 		_ = s.publisher.Publish(ctx, disbursedEvt)
 	}
-
-	return nil
 }
 
 func (s *loanService) RecordPayment(ctx context.Context, orgID, loanID uint, req dto.LoanPaymentRequest) (*dto.LoanPaymentResponse, error) {
@@ -334,18 +452,20 @@ func (s *loanService) mapProductToResponse(p *model.LoanProduct) *dto.LoanProduc
 
 func (s *loanService) mapLoanToResponse(l *model.Loan) *dto.LoanResponse {
 	res := &dto.LoanResponse{
-		ID:              l.ID,
-		MemberID:        l.MemberID,
-		LoanProductID:   l.LoanProductID,
-		LoanNumber:      l.LoanNumber,
-		PrincipalAmount: l.PrincipalAmount,
-		InterestRate:    l.InterestRate,
-		TermMonths:      l.TermMonths,
-		TotalInterest:   l.TotalInterest,
-		ExpectedTotal:   l.ExpectedTotal,
-		Outstanding:     l.Outstanding,
-		Status:          l.Status,
-		CreatedAt:       l.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                 l.ID,
+		MemberID:           l.MemberID,
+		LoanProductID:      l.LoanProductID,
+		LoanNumber:         l.LoanNumber,
+		PrincipalAmount:    l.PrincipalAmount,
+		InterestRate:       l.InterestRate,
+		TermMonths:         l.TermMonths,
+		TotalInterest:      l.TotalInterest,
+		ExpectedTotal:      l.ExpectedTotal,
+		Outstanding:        l.Outstanding,
+		Purpose:            l.Purpose,
+		DisbursementMethod: l.DisbursementMethod,
+		Status:             l.Status,
+		CreatedAt:          l.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	for _, sch := range l.Schedules {
@@ -362,6 +482,26 @@ func (s *loanService) mapLoanToResponse(l *model.Loan) *dto.LoanResponse {
 
 	for _, pay := range l.Payments {
 		res.Payments = append(res.Payments, *s.mapPaymentToResponse(&pay))
+	}
+
+	for _, col := range l.Collaterals {
+		res.Collaterals = append(res.Collaterals, dto.CollateralResponse{
+			ID:          col.ID,
+			Type:        col.Type,
+			Description: col.Description,
+			DocumentURL: col.DocumentURL,
+		})
+	}
+
+	for _, al := range l.ApprovalLogs {
+		res.ApprovalLogs = append(res.ApprovalLogs, dto.ApprovalLogResponse{
+			ID:         al.ID,
+			ApproverID: al.ApproverID,
+			Role:       al.Role,
+			Action:     al.Action,
+			Notes:      al.Notes,
+			CreatedAt:  al.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
 	}
 
 	return res

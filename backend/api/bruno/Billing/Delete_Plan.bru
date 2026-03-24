@@ -1,11 +1,11 @@
 meta {
-  name: Approve Loan
+  name: Delete Subscription Plan
   type: http
   seq: 5
 }
 
-post {
-  url: {{base_url}}/loans/1/approve
+delete {
+  url: {{base_url}}/billing/admin/plans/2
   body: none
   auth: bearer
 }

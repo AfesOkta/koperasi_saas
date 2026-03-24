@@ -35,15 +35,20 @@ type Loan struct {
 	ExpectedTotal float64 `json:"expected_total" gorm:"type:decimal(15,2);default:0"` // Principal + Total Interest
 	Outstanding   float64 `json:"outstanding" gorm:"type:decimal(15,2);default:0"`    // Remaining balance
 
-	Status      string  `json:"status" gorm:"default:'pending'"` // pending, approved, rejected, active, paid, defaulted
+	Purpose            string `json:"purpose" gorm:"type:text"`                               // Tujuan pinjaman
+	DisbursementMethod string `json:"disbursement_method" gorm:"size:20;default:'transfer'"` // transfer, cash
+
+	Status      string  `json:"status" gorm:"default:'pending'"` // pending, staff_approved, supervisor_approved, active, rejected, paid, defaulted
 	ApprovedAt  *string `json:"approved_at" gorm:"type:timestamp"`
 	ApprovedBy  *uint   `json:"approved_by" gorm:"index"`
 	RejectedAt  *string `json:"rejected_at" gorm:"type:timestamp"`
 	RejectedBy  *uint   `json:"rejected_by" gorm:"index"`
 	DisbursedAt *string `json:"disbursed_at" gorm:"type:timestamp"`
 
-	Schedules []LoanSchedule `json:"schedules,omitempty" gorm:"foreignKey:LoanID"`
-	Payments  []LoanPayment  `json:"payments,omitempty" gorm:"foreignKey:LoanID"`
+	Schedules    []LoanSchedule    `json:"schedules,omitempty" gorm:"foreignKey:LoanID"`
+	Payments     []LoanPayment     `json:"payments,omitempty" gorm:"foreignKey:LoanID"`
+	Collaterals  []LoanCollateral  `json:"collaterals,omitempty" gorm:"foreignKey:LoanID"`
+	ApprovalLogs []ApprovalLog     `json:"approval_logs,omitempty" gorm:"foreignKey:LoanID"`
 }
 
 // LoanSchedule defines the expected monthly repayments.

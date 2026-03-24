@@ -22,28 +22,48 @@ type LoanProductResponse struct {
 	Status       string  `json:"status"`
 }
 
+// CollateralRequest is used for submitting collateral with a loan application.
+type CollateralRequest struct {
+	Type        string `json:"type" validate:"required"`
+	Description string `json:"description" validate:"omitempty"`
+	DocumentURL string `json:"document_url" validate:"omitempty"`
+}
+
 type LoanApplicationRequest struct {
-	MemberID        uint    `json:"member_id" validate:"required"`
-	LoanProductID   uint    `json:"loan_product_id" validate:"required"`
-	PrincipalAmount float64 `json:"principal_amount" validate:"required,gt=0"`
-	TermMonths      int     `json:"term_months" validate:"required,gt=0"`
+	MemberID           uint               `json:"member_id" validate:"required"`
+	LoanProductID      uint               `json:"loan_product_id" validate:"required"`
+	PrincipalAmount    float64            `json:"principal_amount" validate:"required,gt=0"`
+	TermMonths         int                `json:"term_months" validate:"required,gt=0"`
+	Purpose            string             `json:"purpose" validate:"omitempty"`
+	DisbursementMethod string             `json:"disbursement_method" validate:"omitempty,oneof=transfer cash"`
+	Collateral         *CollateralRequest `json:"collateral,omitempty"`
+}
+
+// ApprovalRequest is used by staff/supervisor/manager to approve or reject a loan.
+type ApprovalRequest struct {
+	Action string `json:"action" validate:"required,oneof=approve reject"`
+	Notes  string `json:"notes" validate:"omitempty"`
 }
 
 type LoanResponse struct {
-	ID              uint                   `json:"id"`
-	MemberID        uint                   `json:"member_id"`
-	LoanProductID   uint                   `json:"loan_product_id"`
-	LoanNumber      string                 `json:"loan_number"`
-	PrincipalAmount float64                `json:"principal_amount"`
-	InterestRate    float64                `json:"interest_rate"`
-	TermMonths      int                    `json:"term_months"`
-	TotalInterest   float64                `json:"total_interest"`
-	ExpectedTotal   float64                `json:"expected_total"`
-	Outstanding     float64                `json:"outstanding"`
-	Status          string                 `json:"status"`
-	CreatedAt       string                 `json:"created_at"`
-	Schedules       []LoanScheduleResponse `json:"schedules,omitempty"`
-	Payments        []LoanPaymentResponse  `json:"payments,omitempty"`
+	ID                 uint                   `json:"id"`
+	MemberID           uint                   `json:"member_id"`
+	LoanProductID      uint                   `json:"loan_product_id"`
+	LoanNumber         string                 `json:"loan_number"`
+	PrincipalAmount    float64                `json:"principal_amount"`
+	InterestRate       float64                `json:"interest_rate"`
+	TermMonths         int                    `json:"term_months"`
+	TotalInterest      float64                `json:"total_interest"`
+	ExpectedTotal      float64                `json:"expected_total"`
+	Outstanding        float64                `json:"outstanding"`
+	Purpose            string                 `json:"purpose"`
+	DisbursementMethod string                 `json:"disbursement_method"`
+	Status             string                 `json:"status"`
+	CreatedAt          string                 `json:"created_at"`
+	Schedules          []LoanScheduleResponse `json:"schedules,omitempty"`
+	Payments           []LoanPaymentResponse  `json:"payments,omitempty"`
+	Collaterals        []CollateralResponse   `json:"collaterals,omitempty"`
+	ApprovalLogs       []ApprovalLogResponse  `json:"approval_logs,omitempty"`
 }
 
 type LoanScheduleResponse struct {
@@ -69,3 +89,20 @@ type LoanPaymentResponse struct {
 	PaymentDate     string  `json:"payment_date"`
 	Description     string  `json:"description"`
 }
+
+type CollateralResponse struct {
+	ID          uint   `json:"id"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	DocumentURL string `json:"document_url"`
+}
+
+type ApprovalLogResponse struct {
+	ID         uint   `json:"id"`
+	ApproverID uint   `json:"approver_id"`
+	Role       string `json:"role"`
+	Action     string `json:"action"`
+	Notes      string `json:"notes"`
+	CreatedAt  string `json:"created_at"`
+}
+

@@ -1,0 +1,26 @@
+meta {
+  name: Apply for Loan (No Collateral)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/loans/apply
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "member_id": 1,
+    "loan_product_id": 1,
+    "principal_amount": 3000000,
+    "term_months": 6,
+    "purpose": "Kebutuhan Konsumtif",
+    "disbursement_method": "cash"
+  }
+}

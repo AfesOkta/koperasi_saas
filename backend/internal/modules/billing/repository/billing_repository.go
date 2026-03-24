@@ -9,7 +9,11 @@ import (
 
 type BillingRepository interface {
 	GetSubscription(ctx context.Context, orgID uint) (*model.OrgSubscription, error)
+	ListPlans(ctx context.Context) ([]model.SubscriptionPlan, error)
+	GetPlanByID(ctx context.Context, id uint) (*model.SubscriptionPlan, error)
 	CreatePlan(ctx context.Context, plan *model.SubscriptionPlan) error
+	UpdatePlan(ctx context.Context, plan *model.SubscriptionPlan) error
+	DeletePlan(ctx context.Context, id uint) error
 	GetPlanByCode(ctx context.Context, code string) (*model.SubscriptionPlan, error)
 	UpdateSubscription(ctx context.Context, sub *model.OrgSubscription) error
 }
@@ -28,8 +32,28 @@ func (r *billingRepository) GetSubscription(ctx context.Context, orgID uint) (*m
 	return &sub, err
 }
 
+func (r *billingRepository) ListPlans(ctx context.Context) ([]model.SubscriptionPlan, error) {
+	var plans []model.SubscriptionPlan
+	err := r.db.WithContext(ctx).Find(&plans).Error
+	return plans, err
+}
+
+func (r *billingRepository) GetPlanByID(ctx context.Context, id uint) (*model.SubscriptionPlan, error) {
+	var plan model.SubscriptionPlan
+	err := r.db.WithContext(ctx).First(&plan, id).Error
+	return &plan, err
+}
+
 func (r *billingRepository) CreatePlan(ctx context.Context, plan *model.SubscriptionPlan) error {
 	return r.db.WithContext(ctx).Create(plan).Error
+}
+
+func (r *billingRepository) UpdatePlan(ctx context.Context, plan *model.SubscriptionPlan) error {
+	return r.db.WithContext(ctx).Save(plan).Error
+}
+
+func (r *billingRepository) DeletePlan(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&model.SubscriptionPlan{}, id).Error
 }
 
 func (r *billingRepository) GetPlanByCode(ctx context.Context, code string) (*model.SubscriptionPlan, error) {

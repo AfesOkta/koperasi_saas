@@ -17,9 +17,15 @@ auth:bearer {
 body:json {
   {
     "member_id": 1,
-    "product_id": 1,
-    "amount": 5000000,
+    "loan_product_id": 1,
+    "principal_amount": 5000000,
     "term_months": 12,
-    "purpose": "Modal Usaha"
+    "purpose": "Modal Usaha",
+    "disbursement_method": "transfer",
+    "collateral": {
+      "type": "BPKB",
+      "description": "BPKB Motor Honda Vario 2023",
+      "document_url": ""
+    }
   }
 }

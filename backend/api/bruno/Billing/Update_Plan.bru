@@ -1,0 +1,26 @@
+meta {
+  name: Update Subscription Plan
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/billing/admin/plans/2
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Professional Tier V2",
+    "code": "PRO_V2",
+    "description": "Updated plan description",
+    "price": 550000,
+    "max_users": 25,
+    "max_members": 1500
+  }
+}

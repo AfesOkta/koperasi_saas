@@ -19,9 +19,18 @@ type LoanRepository interface {
 	ListLoansByMember(ctx context.Context, orgID, memberID uint) ([]model.Loan, error)
 	UpdateLoanStatus(ctx context.Context, loan *model.Loan) error
 	ListLoansByStatus(ctx context.Context, orgID uint, statuses []string) ([]model.Loan, error)
+	HasOutstandingLoan(ctx context.Context, orgID, memberID uint) (bool, error)
 
 	// Payments
 	RecordPayment(ctx context.Context, loan *model.Loan, payment *model.LoanPayment, schedulesToUpdate []model.LoanSchedule) error
+
+	// Collaterals
+	CreateCollateral(ctx context.Context, coll *model.LoanCollateral) error
+	GetCollateralsByLoanID(ctx context.Context, loanID uint) ([]model.LoanCollateral, error)
+
+	// Approval Logs
+	CreateApprovalLog(ctx context.Context, log *model.ApprovalLog) error
+	GetApprovalLogsByLoanID(ctx context.Context, loanID uint) ([]model.ApprovalLog, error)
 
 	// Utils
 	GetDB() *gorm.DB
@@ -66,6 +75,8 @@ func (r *loanRepository) GetLoanByID(ctx context.Context, orgID, id uint) (*mode
 	err := r.db.WithContext(ctx).
 		Preload("Schedules").
 		Preload("Payments").
+		Preload("Collaterals").
+		Preload("ApprovalLogs").
 		Where("organization_id = ?", orgID).
 		First(&loan, id).Error
 	return &loan, err
@@ -91,6 +102,15 @@ func (r *loanRepository) ListLoansByStatus(ctx context.Context, orgID uint, stat
 		Preload("Schedules").
 		Find(&loans).Error
 	return loans, err
+}
+
+func (r *loanRepository) HasOutstandingLoan(ctx context.Context, orgID, memberID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.Loan{}).
+		Where("organization_id = ? AND member_id = ? AND outstanding > 0 AND status NOT IN ?", orgID, memberID, []string{"paid", "defaulted", "rejected"}).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (r *loanRepository) RecordPayment(ctx context.Context, loan *model.Loan, payment *model.LoanPayment, schedulesToUpdate []model.LoanSchedule) error {
@@ -125,3 +145,26 @@ func (r *loanRepository) RecordPayment(ctx context.Context, loan *model.Loan, pa
 		return nil
 	})
 }
+
+// Collateral methods
+func (r *loanRepository) CreateCollateral(ctx context.Context, coll *model.LoanCollateral) error {
+	return r.db.WithContext(ctx).Create(coll).Error
+}
+
+func (r *loanRepository) GetCollateralsByLoanID(ctx context.Context, loanID uint) ([]model.LoanCollateral, error) {
+	var cols []model.LoanCollateral
+	err := r.db.WithContext(ctx).Where("loan_id = ?", loanID).Find(&cols).Error
+	return cols, err
+}
+
+// Approval Log methods
+func (r *loanRepository) CreateApprovalLog(ctx context.Context, log *model.ApprovalLog) error {
+	return r.db.WithContext(ctx).Create(log).Error
+}
+
+func (r *loanRepository) GetApprovalLogsByLoanID(ctx context.Context, loanID uint) ([]model.ApprovalLog, error) {
+	var logs []model.ApprovalLog
+	err := r.db.WithContext(ctx).Where("loan_id = ?", loanID).Order("created_at ASC").Find(&logs).Error
+	return logs, err
+}
+

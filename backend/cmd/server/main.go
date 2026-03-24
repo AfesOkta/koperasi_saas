@@ -74,6 +74,7 @@ import (
 
 	billingHandler "github.com/koperasi-gresik/backend/internal/modules/billing/handler"
 	billingRepo "github.com/koperasi-gresik/backend/internal/modules/billing/repository"
+	billingService "github.com/koperasi-gresik/backend/internal/modules/billing/service"
 
 	notificationHandler "github.com/koperasi-gresik/backend/internal/modules/notification/handler"
 	notificationRepo "github.com/koperasi-gresik/backend/internal/modules/notification/repository"
@@ -197,6 +198,7 @@ func main() {
 	warehouseModuleService := inventoryService.NewWarehouseService(warehouseRepository, inventoryRepository)
 	posModuleService := posService.NewPOSService(posRepository, inventoryModuleService)
 	closingModuleService := closingService.NewClosingService(closingRepository, loanRepository, savingRepository, accountingModuleService, orgRepository)
+	billingModuleService := billingService.NewBillingService(billingRepository)
 	mobileModuleService := memberService.NewMobileService(memberRepository, savingRepository, loanRepository)
 
 	// Async Background Workers
@@ -248,7 +250,7 @@ func main() {
 	purchasingModuleHandler := purchasingHandler.NewPurchasingHandler(purchasingModuleService)
 	reportModuleHandler := reportHandler.NewReportHandler(reportModuleService)
 	auditModuleHandler := auditHandler.NewAuditHandler(auditRepository)
-	billingModuleHandler := billingHandler.NewBillingHandler(billingRepository)
+	billingModuleHandler := billingHandler.NewBillingHandler(billingModuleService)
 	notificationModuleHandler := notificationHandler.NewNotificationHandler(notificationRepoObj)
 	posModuleHandler := posHandler.NewPOSHandler(posModuleService)
 	shuModuleHandler := shuHandler.NewSHUHandler(shuModuleService)

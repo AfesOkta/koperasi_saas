@@ -1,0 +1,26 @@
+meta {
+  name: Create Subscription Plan
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/billing/admin/plans
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Professional",
+    "code": "PRO",
+    "description": "Plan untuk koperasi skala menengah dengan fitur jaminan dan multi-level approval",
+    "price": 500000,
+    "max_users": 20,
+    "max_members": 1000
+  }
+}

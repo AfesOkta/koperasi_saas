@@ -1,0 +1,22 @@
+meta {
+  name: Reject Loan
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/loans/1/approve/supervisor
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "action": "reject",
+    "notes": "Kemampuan bayar tidak memenuhi syarat"
+  }
+}

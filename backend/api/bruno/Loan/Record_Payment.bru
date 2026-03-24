@@ -1,7 +1,7 @@
 meta {
   name: Record Payment
   type: http
-  seq: 6
+  seq: 10
 }
 
 post {
@@ -17,6 +17,6 @@ auth:bearer {
 body:json {
   {
     "amount": 500000,
-    "payment_method": "CASH"
+    "description": "Pembayaran cicilan bulan ke-1"
   }
 }

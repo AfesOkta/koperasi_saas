@@ -1,0 +1,22 @@
+meta {
+  name: Approve by Supervisor
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/loans/1/approve/supervisor
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "action": "approve",
+    "notes": "Kemampuan bayar memenuhi syarat, disetujui supervisor"
+  }
+}

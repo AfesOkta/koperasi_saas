@@ -60,14 +60,35 @@ func (h *LoanHandler) ApplyForLoan(c *fiber.Ctx) error {
 	return response.Created(c, loan, "Loan application submitted successfully")
 }
 
+// ApproveLoan handles multi-level approval.
+// The role is passed via URL param: /loans/:id/approve/:role
+// Valid roles: staff, supervisor, manager
 func (h *LoanHandler) ApproveLoan(c *fiber.Ctx) error {
 	orgID := middleware.GetOrganizationID(c)
+	userID := middleware.GetUserID(c)
 	loanID, err := c.ParamsInt("id")
 	if err != nil {
 		return response.BadRequest(c, "Invalid loan ID")
 	}
 
-	if err := h.service.ApproveLoan(c.Context(), orgID, uint(loanID)); err != nil {
+	role := c.Params("role")
+	if role == "" {
+		return response.BadRequest(c, "Role is required (staff, supervisor, manager)")
+	}
+
+	var req dto.ApprovalRequest
+	if err := validator.Validate(c, &req); err != nil {
+		return err
+	}
+
+	if req.Action == "reject" {
+		if err := h.service.RejectLoan(c.Context(), orgID, uint(loanID), userID, role, req); err != nil {
+			return response.BadRequest(c, err.Error())
+		}
+		return response.Success(c, nil, "Loan rejected successfully")
+	}
+
+	if err := h.service.ApproveLoan(c.Context(), orgID, uint(loanID), userID, role, req); err != nil {
 		return response.BadRequest(c, err.Error())
 	}
 
@@ -118,6 +139,6 @@ func RegisterRoutes(router fiber.Router, handler *LoanHandler, middlewares ...fi
 
 	group.Post("/apply", handler.ApplyForLoan)
 	group.Get("/:id", handler.GetLoan)
-	group.Post("/:id/approve", handler.ApproveLoan)
+	group.Post("/:id/approve/:role", handler.ApproveLoan) // role = staff, supervisor, manager
 	group.Post("/:id/payments", handler.RecordPayment)
 }
