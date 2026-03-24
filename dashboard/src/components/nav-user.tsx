@@ -32,12 +32,14 @@ import {
 
 export function NavUser({
   user,
+  isSuperadmin = false,
 }: {
   user: {
     name: string
     email: string
     avatar: string
   }
+  isSuperadmin?: boolean
 }) {
   const { isMobile } = useSidebar()
 
@@ -90,26 +92,36 @@ export function NavUser({
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            {!isSuperadmin && (
+              <>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem>
+                    <Sparkles className="mr-2" />
+                    Upgrade to Pro
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
-              </DropdownMenuItem>
+              <a href={isSuperadmin ? "/superadmin/account" : "/account"} className="w-full">
+                <DropdownMenuItem className="cursor-pointer">
+                  <BadgeCheck className="mr-2" />
+                  Account
+                </DropdownMenuItem>
+              </a>
+              <a href={isSuperadmin ? "/superadmin/billing" : "/billing"} className="w-full">
+                <DropdownMenuItem className="cursor-pointer">
+                  <CreditCard className="mr-2" />
+                  Billing
+                </DropdownMenuItem>
+              </a>
+              <a href={isSuperadmin ? "/superadmin/notifications" : "/notifications"} className="w-full">
+                <DropdownMenuItem className="cursor-pointer">
+                  <Bell className="mr-2" />
+                  Notifications
+                </DropdownMenuItem>
+              </a>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
