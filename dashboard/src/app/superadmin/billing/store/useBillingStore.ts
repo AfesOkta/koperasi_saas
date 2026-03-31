@@ -6,87 +6,115 @@ export interface PlanFeature {
 }
 
 export interface SubscriptionPlan {
-  id: string;
+  id: number;
   name: string;
-  priceAmount: number;
-  priceDisplay: string;
-  interval: string;
+  code: string;
   description: string;
-  features: PlanFeature[];
-  isPopular: boolean;
-  colorTheme: 'blue' | 'purple' | 'amber';
+  price: number;
+  max_users: number;
+  max_members: number;
+  is_popular: boolean;
+  // UI-only properties
+  colorTheme?: 'blue' | 'purple' | 'amber';
 }
 
 interface BillingState {
   plans: SubscriptionPlan[];
-  addPlan: (plan: Omit<SubscriptionPlan, 'id'>) => void;
-  updatePlan: (id: string, plan: Partial<SubscriptionPlan>) => void;
-  deletePlan: (id: string) => void;
+  isLoading: boolean;
+  error: string | null;
+  fetchPlans: () => Promise<void>;
+  addPlan: (plan: Omit<SubscriptionPlan, 'id'>) => Promise<void>;
+  updatePlan: (id: number, plan: Partial<SubscriptionPlan>) => Promise<void>;
+  deletePlan: (id: number) => Promise<void>;
 }
 
-const mockPlans: SubscriptionPlan[] = [
-  {
-    id: '1',
-    name: 'Starter',
-    priceAmount: 499000,
-    priceDisplay: 'Rp 499k',
-    interval: '/mo',
-    description: 'Up to 100 members & basic accounting',
-    features: [
-      { id: 'f1', name: 'Core Banking Module' },
-      { id: 'f2', name: 'Member Management' },
-      { id: 'f3', name: 'Simple Reporting' }
-    ],
-    isPopular: false,
-    colorTheme: 'blue'
-  },
-  {
-    id: '2',
-    name: 'Business',
-    priceAmount: 1490000,
-    priceDisplay: 'Rp 1.49M',
-    interval: '/mo',
-    description: 'Up to 1,000 members & advanced features',
-    features: [
-      { id: 'f4', name: 'Everything in Starter' },
-      { id: 'f5', name: 'Inventory Module' },
-      { id: 'f6', name: 'Advanced Financial Reports' }
-    ],
-    isPopular: true,
-    colorTheme: 'purple'
-  },
-  {
-    id: '3',
-    name: 'Enterprise',
-    priceAmount: 0,
-    priceDisplay: 'Custom',
-    interval: '',
-    description: 'Unlimited members & custom modules',
-    features: [
-      { id: 'f7', name: 'Full Suite Access' },
-      { id: 'f8', name: 'Multi-branch Support' },
-      { id: 'f9', name: 'Priority 24/7 Support' }
-    ],
-    isPopular: false,
-    colorTheme: 'amber'
-  }
-];
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`,
+  };
+};
 
-export const useBillingStore = create<BillingState>((set) => ({
-  plans: mockPlans,
-  addPlan: (planData) => set((state) => ({
-    plans: [
-      ...state.plans,
-      {
-        ...planData,
-        id: Math.random().toString(36).substr(2, 9),
-      }
-    ]
-  })),
-  updatePlan: (id, planData) => set((state) => ({
-    plans: state.plans.map((p) => p.id === id ? { ...p, ...planData } : p)
-  })),
-  deletePlan: (id) => set((state) => ({
-    plans: state.plans.filter((p) => p.id !== id)
-  }))
+export const useBillingStore = create<BillingState>((set, get) => ({
+  plans: [],
+  isLoading: false,
+  error: null,
+
+  fetchPlans: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch("/api/v1/billing/plans", {
+        headers: getAuthHeaders(),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to fetch plans");
+      
+      // Add UI-only color themes based on index, but use real is_popular
+      const enrichedPlans = (result.data || []).map((plan: any, index: number) => ({
+        ...plan,
+        colorTheme: index === 0 ? 'blue' : index === 1 ? 'purple' : 'amber',
+      }));
+      
+      set({ plans: enrichedPlans, isLoading: false });
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+    }
+  },
+
+  addPlan: async (planData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch("/api/v1/billing/admin/plans", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(planData),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to create plan");
+      
+      await get().fetchPlans();
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  updatePlan: async (id, planData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`/api/v1/billing/admin/plans/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(planData),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to update plan");
+      
+      await get().fetchPlans();
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  deletePlan: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`/api/v1/billing/admin/plans/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to delete plan");
+      
+      set((state) => ({
+        plans: state.plans.filter((p) => p.id !== id),
+        isLoading: false
+      }));
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
 }));

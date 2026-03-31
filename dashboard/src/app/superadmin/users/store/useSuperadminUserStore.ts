@@ -1,51 +1,117 @@
 import { create } from 'zustand';
 
-export type KoperasiStatus = 'active' | 'inactive' | 'trial';
-export type KoperasiPlan = 'Enterprise' | 'Business' | 'Starter';
-
 export interface Koperasi {
-  id: string;
+  id: number;
   name: string;
-  location: string;
   email: string;
-  plan: KoperasiPlan;
-  status: KoperasiStatus;
-  joinDate: string;
+  phone: string;
+  address: string;
+  logo: string;
+  plan: string;
+  status: string;
+  created_at: string;
+  settings: Record<string, any>;
 }
 
 interface SuperadminUserState {
   koperasis: Koperasi[];
   searchQuery: string;
+  isLoading: boolean;
+  error: string | null;
   setSearchQuery: (query: string) => void;
-  addKoperasi: (koperasi: Omit<Koperasi, 'id' | 'joinDate'>) => void;
-  updateKoperasi: (id: string, koperasi: Partial<Koperasi>) => void;
-  deleteKoperasi: (id: string) => void;
+  fetchKoperasis: () => Promise<void>;
+  addKoperasi: (data: any) => Promise<void>;
+  updateKoperasi: (id: number, data: any) => Promise<void>;
+  deleteKoperasi: (id: number) => Promise<void>; // Currently unused in API, stubbed for UI compatibility
 }
 
-const mockKoperasis: Koperasi[] = [
-  { id: '1', name: 'Koperasi Maju Jaya', location: 'Jakarta, Indonesia', email: 'admin@majujaya.com', plan: 'Enterprise', status: 'active', joinDate: 'Jan 12, 2024' },
-  { id: '2', name: 'Kud Binangun', location: 'Yogyakarta, Indonesia', email: 'contact@binangun.org', plan: 'Business', status: 'active', joinDate: 'Feb 05, 2024' },
-  { id: '3', name: 'Kopka Mandiri', location: 'Bandung, Indonesia', email: 'info@kopkamandiri.com', plan: 'Starter', status: 'trial', joinDate: 'Mar 15, 2024' },
-];
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`,
+  };
+};
 
-export const useSuperadminUserStore = create<SuperadminUserState>((set) => ({
-  koperasis: mockKoperasis,
+export const useSuperadminUserStore = create<SuperadminUserState>((set, get) => ({
+  koperasis: [],
   searchQuery: '',
+  isLoading: false,
+  error: null,
+  
   setSearchQuery: (query) => set({ searchQuery: query }),
-  addKoperasi: (koperasiData) => set((state) => ({
-    koperasis: [
-      {
-        ...koperasiData,
-        id: Math.random().toString(36).substr(2, 9),
-        joinDate: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      },
-      ...state.koperasis,
-    ]
-  })),
-  updateKoperasi: (id, koperasiData) => set((state) => ({
-    koperasis: state.koperasis.map((k) => k.id === id ? { ...k, ...koperasiData } : k)
-  })),
-  deleteKoperasi: (id) => set((state) => ({
-    koperasis: state.koperasis.filter((k) => k.id !== id)
-  }))
+  
+  fetchKoperasis: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch("/api/v1/organizations", {
+        headers: getAuthHeaders(),
+      });
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to fetch koperasis");
+      }
+      
+      set({ koperasis: result.data || [], isLoading: false });
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+    }
+  },
+
+  addKoperasi: async (data: any) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch("/api/v1/organizations/onboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }, // Onboarding is public, no auth required by Bruno file
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to onboard koperasi");
+      }
+
+      await get().fetchKoperasis(); // Refresh the list
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err; // Re-throw to be handled by UI
+    }
+  },
+
+  updateKoperasi: async (id: number, data: any) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Backend expects PATCH for settings/plan
+      const response = await fetch(`/api/v1/organizations/${id}/settings`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to update koperasi");
+      }
+
+      await get().fetchKoperasis(); // Refresh
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  },
+
+  deleteKoperasi: async (id: number) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Currently the backend does not have a delete organization endpoint in the Bruno collection.
+      // We will just do a standard API call assuming one might exist, or simulate it.
+      console.warn("Delete endpoint not explicitly defined. Implementing logic stub.");
+      set((state) => ({ koperasis: state.koperasis.filter(k => k.id !== id), isLoading: false }));
+    } catch (err: any) {
+      set({ error: err.message, isLoading: false });
+      throw err;
+    }
+  }
 }));

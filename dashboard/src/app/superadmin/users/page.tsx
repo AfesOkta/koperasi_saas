@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,15 +20,20 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, UserPlus } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Search, UserPlus, RefreshCcw } from "lucide-react"
 import { UserTable } from "./components/UserTable"
 import { UserFormModal } from "./components/UserFormModal"
 import { useSuperadminUserStore, Koperasi } from "./store/useSuperadminUserStore"
 
 export default function UsersPage() {
-  const { koperasis, searchQuery, setSearchQuery } = useSuperadminUserStore()
+  const { koperasis, searchQuery, setSearchQuery, fetchKoperasis, isLoading, error } = useSuperadminUserStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [koperasiToEdit, setKoperasiToEdit] = useState<Koperasi | null>(null)
+
+  useEffect(() => {
+    fetchKoperasis()
+  }, [fetchKoperasis])
 
   const handleAddClick = () => {
     setKoperasiToEdit(null)
@@ -65,11 +70,22 @@ export default function UsersPage() {
             <h2 className="text-2xl font-bold tracking-tight">Koperasi Management</h2>
             <p className="text-muted-foreground mt-1">Monitor and manage all Koperasis on the platform.</p>
           </div>
-          <Button className="w-full sm:w-auto shadow-sm gap-2" onClick={handleAddClick}>
-            <UserPlus className="w-4 h-4" />
-            Add New Koperasi
-          </Button>
+          <div className="flex w-full sm:w-auto gap-2">
+            <Button variant="outline" size="icon" onClick={() => fetchKoperasis()} disabled={isLoading}>
+              <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button className="w-full sm:w-auto shadow-sm gap-2" onClick={handleAddClick}>
+              <UserPlus className="w-4 h-4" />
+              Add New Koperasi
+            </Button>
+          </div>
         </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         <Card className="shadow-xs">
           <CardHeader className="pb-3">

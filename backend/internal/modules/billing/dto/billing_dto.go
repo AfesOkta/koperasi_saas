@@ -7,6 +7,7 @@ type SubscriptionPlanRequest struct {
 	Price       float64 `json:"price" validate:"required,min=0"`
 	MaxUsers    int     `json:"max_users" validate:"min=0"`
 	MaxMembers  int     `json:"max_members" validate:"min=0"`
+	IsPopular   bool    `json:"is_popular"`
 }
 
 type SubscriptionPlanResponse struct {
@@ -17,6 +18,7 @@ type SubscriptionPlanResponse struct {
 	Price       float64 `json:"price"`
 	MaxUsers    int     `json:"max_users"`
 	MaxMembers  int     `json:"max_members"`
+	IsPopular   bool    `json:"is_popular"`
 }
 
 type OrgSubscriptionResponse struct {

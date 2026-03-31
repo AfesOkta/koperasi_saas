@@ -9,6 +9,8 @@ import {
   Sparkles,
 } from "lucide-react"
 
+import { useRouter } from "next/navigation"
+
 import {
   Avatar,
   AvatarFallback,
@@ -42,6 +44,15 @@ export function NavUser({
   isSuperadmin?: boolean
 }) {
   const { isMobile } = useSidebar()
+  const router = useRouter()
+
+  const handleLogout = () => {
+    // Remove token and all other stored information
+    localStorage.clear()
+    
+    // Redirect to login page
+    router.push('/')
+  }
 
   return (
     <SidebarMenu>
@@ -124,8 +135,8 @@ export function NavUser({
               </a>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOut />
+            <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
+              <LogOut className="mr-2" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

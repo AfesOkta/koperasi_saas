@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,15 +19,22 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Plus, RefreshCcw } from "lucide-react"
 import { PlanCards } from "./components/PlanCards"
 import { InvoiceTable } from "./components/InvoiceTable"
 import { PlanFormModal } from "./components/PlanFormModal"
-import { SubscriptionPlan } from "./store/useBillingStore"
+import { useBillingStore, SubscriptionPlan } from "./store/useBillingStore"
 
 export default function BillingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [planToEdit, setPlanToEdit] = useState<SubscriptionPlan | null>(null)
+  
+  const { fetchPlans, isLoading, error } = useBillingStore()
+
+  useEffect(() => {
+    fetchPlans()
+  }, [fetchPlans])
 
   const handleAddClick = () => {
     setPlanToEdit(null)
@@ -64,11 +71,22 @@ export default function BillingPage() {
             <h2 className="text-2xl font-bold tracking-tight">Subscription Plans</h2>
             <p className="text-muted-foreground mt-1">Manage and configure available Koperasi SaaS plans.</p>
           </div>
-          <Button className="gap-2 shadow-sm" onClick={handleAddClick}>
-            <Plus className="w-4 h-4" />
-            Create New Plan
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={() => fetchPlans()} disabled={isLoading}>
+              <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button className="gap-2 shadow-sm" onClick={handleAddClick}>
+              <Plus className="w-4 h-4" />
+              Create New Plan
+            </Button>
+          </div>
         </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         <PlanCards onEdit={handleEditClick} />
 

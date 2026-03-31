@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Loader2 } from "lucide-react"
 import { useBillingStore, SubscriptionPlan } from "../store/useBillingStore"
 
 interface PlanFormModalProps {
@@ -23,73 +24,56 @@ interface PlanFormModalProps {
 }
 
 export function PlanFormModal({ isOpen, onClose, planToEdit }: PlanFormModalProps) {
-  const { addPlan, updatePlan } = useBillingStore()
+  const { addPlan, updatePlan, isLoading } = useBillingStore()
   
   const [formData, setFormData] = useState({
     name: "",
-    priceAmount: 0,
-    priceDisplay: "",
-    interval: "/mo",
+    code: "",
+    price: 0,
     description: "",
-    featuresText: "",
-    isPopular: false,
-    colorTheme: "blue" as "blue" | "purple" | "amber",
+    max_users: 10,
+    max_members: 100,
+    is_popular: false,
   })
 
   useEffect(() => {
     if (planToEdit) {
       setFormData({
         name: planToEdit.name,
-        priceAmount: planToEdit.priceAmount,
-        priceDisplay: planToEdit.priceDisplay,
-        interval: planToEdit.interval,
+        code: planToEdit.code,
+        price: planToEdit.price,
         description: planToEdit.description,
-        featuresText: planToEdit.features.map(f => f.name).join('\n'),
-        isPopular: planToEdit.isPopular,
-        colorTheme: planToEdit.colorTheme,
+        max_users: planToEdit.max_users,
+        max_members: planToEdit.max_members,
+        is_popular: planToEdit.is_popular,
       })
     } else {
       setFormData({
         name: "",
-        priceAmount: 0,
-        priceDisplay: "",
-        interval: "/mo",
+        code: "",
+        price: 0,
         description: "",
-        featuresText: "",
-        isPopular: false,
-        colorTheme: "blue",
+        max_users: 10,
+        max_members: 100,
+        is_popular: false,
       })
     }
   }, [planToEdit, isOpen])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Parse features from text
-    const features = formData.featuresText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map((name, i) => ({ id: `new_${Date.now()}_${i}`, name }))
-
-    const submittedData = {
-      name: formData.name,
-      priceAmount: formData.priceAmount,
-      priceDisplay: formData.priceDisplay,
-      interval: formData.interval,
-      description: formData.description,
-      isPopular: formData.isPopular,
-      colorTheme: formData.colorTheme,
-      features,
+    try {
+      if (planToEdit) {
+        await updatePlan(planToEdit.id, formData)
+      } else {
+        await addPlan(formData)
+      }
+      onClose()
+    } catch (err) {
+      // Error is handled in the store
+      console.error("Failed to save plan", err)
     }
-
-    if (planToEdit) {
-      updatePlan(planToEdit.id, submittedData)
-    } else {
-      addPlan(submittedData)
-    }
-    
-    onClose()
   }
 
   return (
@@ -106,91 +90,98 @@ export function PlanFormModal({ isOpen, onClose, planToEdit }: PlanFormModalProp
           </DialogHeader>
 
           <div className="grid gap-4 py-4 min-h-[300px] max-h-[60vh] overflow-y-auto px-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Plan Name</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  required
+                  placeholder="e.g. Starter, Pro"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="code">Plan Code</Label>
+                <Input
+                  id="code"
+                  value={formData.code}
+                  onChange={(e) => setFormData({...formData, code: e.target.value.toUpperCase()})}
+                  required
+                  placeholder="e.g. STARTER, PRO"
+                />
+              </div>
+            </div>
+
             <div className="grid gap-2">
-              <Label htmlFor="name">Plan Name</Label>
+              <Label htmlFor="price">Price (IDR)</Label>
               <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                id="price"
+                type="number"
+                value={formData.price}
+                onChange={(e) => setFormData({...formData, price: parseInt(e.target.value) || 0})}
                 required
-                placeholder="e.g. Starter, Pro, Custom"
+                placeholder="e.g. 500000"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="priceDisplay">Display Price</Label>
+                <Label htmlFor="max_users">Max Users</Label>
                 <Input
-                  id="priceDisplay"
-                  value={formData.priceDisplay}
-                  onChange={(e) => setFormData({...formData, priceDisplay: e.target.value})}
+                  id="max_users"
+                  type="number"
+                  value={formData.max_users}
+                  onChange={(e) => setFormData({...formData, max_users: parseInt(e.target.value) || 0})}
                   required
-                  placeholder="e.g. Rp 499k"
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="interval">Interval</Label>
+                <Label htmlFor="max_members">Max Members</Label>
                 <Input
-                  id="interval"
-                  value={formData.interval}
-                  onChange={(e) => setFormData({...formData, interval: e.target.value})}
-                  placeholder="e.g. /mo, /yr, or empty"
+                  id="max_members"
+                  type="number"
+                  value={formData.max_members}
+                  onChange={(e) => setFormData({...formData, max_members: parseInt(e.target.value) || 0})}
+                  required
                 />
               </div>
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="description">Short Description</Label>
-              <Input
+              <Label htmlFor="description">Description</Label>
+              <Textarea
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 required
-                placeholder="Up to 100 members..."
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="features">Features (One per line)</Label>
-              <Textarea
-                id="features"
-                value={formData.featuresText}
-                onChange={(e) => setFormData({...formData, featuresText: e.target.value})}
-                required
-                placeholder="Core Banking Module&#10;Member Management&#10;24/7 Support"
+                placeholder="Description of the plan features..."
                 className="min-h-[100px]"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-2">
-              <div className="grid gap-2">
-                <Label>Theme Color</Label>
-                <select
-                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={formData.colorTheme}
-                  onChange={(e) => setFormData({...formData, colorTheme: e.target.value as any})}
-                >
-                  <option value="blue">Blue (Starter)</option>
-                  <option value="purple">Purple (Business)</option>
-                  <option value="amber">Amber (Enterprise)</option>
-                </select>
-              </div>
-
-              <div className="flex items-center space-x-2 pt-8">
-                <Checkbox 
-                  id="isPopular" 
-                  checked={formData.isPopular}
-                  onCheckedChange={(c) => setFormData({...formData, isPopular: !!c})}
-                />
-                <Label htmlFor="isPopular" className="cursor-pointer">Mark as Popular</Label>
-              </div>
+            <div className="flex items-center space-x-2 pt-2">
+              <Checkbox 
+                id="is_popular" 
+                checked={formData.is_popular}
+                onCheckedChange={(checked) => setFormData({...formData, is_popular: !!checked})}
+              />
+              <Label 
+                htmlFor="is_popular" 
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Mark as Popular
+              </Label>
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
-            <Button type="submit">Save Plan</Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Plan
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

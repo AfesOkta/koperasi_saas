@@ -73,7 +73,7 @@ export default function LoginPage() {
       if (payload && payload.role_id === 1) {
         router.push("/superadmin")
       } else {
-        router.push("/")
+        router.push("/dashboard")
       }
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.")

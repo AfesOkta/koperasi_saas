@@ -71,6 +71,7 @@ func (s *billingService) CreatePlan(ctx context.Context, req dto.SubscriptionPla
 		Price:       req.Price,
 		MaxUsers:    req.MaxUsers,
 		MaxMembers:  req.MaxMembers,
+		IsPopular:   req.IsPopular,
 	}
 
 	if err := s.repo.CreatePlan(ctx, plan); err != nil {
@@ -92,6 +93,7 @@ func (s *billingService) UpdatePlan(ctx context.Context, id uint, req dto.Subscr
 	plan.Price = req.Price
 	plan.MaxUsers = req.MaxUsers
 	plan.MaxMembers = req.MaxMembers
+	plan.IsPopular = req.IsPopular
 
 	if err := s.repo.UpdatePlan(ctx, plan); err != nil {
 		return nil, err
@@ -113,5 +115,6 @@ func (s *billingService) mapPlanToResponse(p *model.SubscriptionPlan) *dto.Subsc
 		Price:       p.Price,
 		MaxUsers:    p.MaxUsers,
 		MaxMembers:  p.MaxMembers,
+		IsPopular:   p.IsPopular,
 	}
 }

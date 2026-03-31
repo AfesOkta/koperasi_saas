@@ -14,6 +14,7 @@ type SubscriptionPlan struct {
 	Price       float64 `json:"price" gorm:"type:decimal(15,2);not null"`
 	MaxUsers    int     `json:"max_users" gorm:"default:0"` // 0 = unlimited
 	MaxMembers  int     `json:"max_members" gorm:"default:0"`
+	IsPopular   bool    `json:"is_popular" gorm:"default:false"`
 }
 
 type OrgSubscription struct {

@@ -9,17 +9,15 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Pencil, Trash, Mail, MapPin } from "lucide-react"
+import { MoreHorizontal, Pencil, Mail, MapPin, Loader2 } from "lucide-react"
 import { useSuperadminUserStore, Koperasi } from "../store/useSuperadminUserStore"
 import { useMemo } from "react"
 
@@ -28,31 +26,53 @@ interface UserTableProps {
 }
 
 export function UserTable({ onEdit }: UserTableProps) {
-  const { koperasis, searchQuery, deleteKoperasi } = useSuperadminUserStore()
+  const { koperasis, searchQuery, isLoading } = useSuperadminUserStore()
 
   const filteredKoperasis = useMemo(() => {
     return koperasis.filter((koperasi) => {
-      return koperasi.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-             koperasi.email.toLowerCase().includes(searchQuery.toLowerCase())
+      const nameMatch = koperasi.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+      const emailMatch = koperasi.email?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+      return nameMatch || emailMatch
     })
   }, [koperasis, searchQuery])
 
   const getPlanBadgeClasses = (plan: string) => {
-    switch(plan) {
-      case 'Enterprise': return "bg-blue-500 font-medium"
-      case 'Business': return "bg-purple-500 font-medium"
-      case 'Starter': return "bg-emerald-500 font-medium"
-      default: return ""
+    switch(plan?.toLowerCase()) {
+      case 'enterprise': return "bg-blue-500 font-medium"
+      case 'premium': case 'business': return "bg-purple-500 font-medium"
+      case 'basic': case 'starter': return "bg-emerald-500 font-medium"
+      default: return "bg-slate-500"
     }
   }
 
   const getStatusBadgeClasses = (status: string) => {
-    switch(status) {
+    switch(status?.toLowerCase()) {
       case 'active': return "bg-emerald-500 font-medium"
       case 'inactive': return "bg-slate-500 font-medium"
-      case 'trial': return "bg-amber-500 font-medium"
-      default: return ""
+      case 'trial': case 'testing': return "bg-amber-500 font-medium"
+      default: return "bg-slate-400"
     }
+  }
+
+  const formatDate = (dateStr: string) => {
+    try {
+      if (!dateStr) return '-'
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric'
+      }).format(new Date(dateStr))
+    } catch {
+      return dateStr
+    }
+  }
+
+  if (isLoading && koperasis.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-48">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -80,7 +100,7 @@ export function UserTable({ onEdit }: UserTableProps) {
               <TableCell>
                 <div className="font-semibold text-lg tracking-tight">{k.name}</div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                  <MapPin className="w-3 h-3" /> {k.location}
+                  <MapPin className="w-3 h-3" /> {k.address || 'No address provided'}
                 </div>
               </TableCell>
               <TableCell>
@@ -91,14 +111,16 @@ export function UserTable({ onEdit }: UserTableProps) {
                 </div>
               </TableCell>
               <TableCell>
-                <Badge className={getPlanBadgeClasses(k.plan)}>{k.plan}</Badge>
+                <Badge className={getPlanBadgeClasses(k.plan)}>
+                  {k.plan ? k.plan.charAt(0).toUpperCase() + k.plan.slice(1) : 'Unknown'}
+                </Badge>
               </TableCell>
               <TableCell>
                 <Badge className={getStatusBadgeClasses(k.status)}>
-                  {k.status.charAt(0).toUpperCase() + k.status.slice(1)}
+                  {k.status ? k.status.charAt(0).toUpperCase() + k.status.slice(1) : 'Unknown'}
                 </Badge>
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">{k.joinDate}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(k.created_at)}</TableCell>
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-8 w-8 p-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
@@ -110,15 +132,7 @@ export function UserTable({ onEdit }: UserTableProps) {
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuItem onClick={() => onEdit(k)} className="cursor-pointer">
                         <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-red-600 focus:text-red-600 cursor-pointer"
-                        onClick={() => deleteKoperasi(k.id)}
-                      >
-                        <Trash className="mr-2 h-4 w-4" />
-                        Delete
+                        Edit User
                       </DropdownMenuItem>
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
